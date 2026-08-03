@@ -15,7 +15,7 @@
 
 const SPOTIFY_AUTH_URL = 'https://accounts.spotify.com/authorize';
 const SPOTIFY_TOKEN_URL = 'https://accounts.spotify.com/api/token';
-const REDIRECT_URI = `${window.location.origin}/`;
+const REDIRECT_URI = window.location.origin;
 const SCOPES = 'playlist-read-private playlist-read-collaborative';
 
 // Storage keys

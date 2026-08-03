@@ -479,7 +479,7 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
                     : 'For all 800+ tracks: create a free app at developer.spotify.com → copy Client ID → set Redirect URI:'}
                 </p>
                 <code className="block text-[10px] text-green-400 bg-slate-950 px-2 py-1 rounded font-mono select-all">
-                  {window.location.origin}/
+                  {window.location.origin}
                 </code>
                 <input
                   type="text"
