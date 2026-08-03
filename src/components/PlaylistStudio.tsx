@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Music, Plus, Trash2, Download, Upload, Save, Check, Disc, ExternalLink, Link as LinkIcon, FileText, Loader2, Sparkles, Layers, Key, ChevronDown, ChevronUp, Bot } from 'lucide-react';
+import { Music, Plus, Trash2, Download, Upload, Save, Check, Disc, ExternalLink, Link as LinkIcon, FileText, Loader2, Sparkles, Layers, Key, ChevronDown, ChevronUp, Bot, Terminal } from 'lucide-react';
 import type { CustomPlaylist, CustomTrack, Language } from '../types/hitster';
 import { getTranslation } from '../utils/translations';
-import { fetchAllTracksFromSpotifyAPI, fetchSpotifyPlaylistPublic, scrapeSpotifyPlaylistLocalAPI, extractSpotifyPlaylistId, parseBatchTracksText } from '../utils/spotifyImporter';
+import { fetchAllTracksFromSpotifyAPI, fetchSpotifyPlaylistPublic, scrapeSpotifyPlaylistWithLiveLogs, extractSpotifyPlaylistId, parseBatchTracksText } from '../utils/spotifyImporter';
 
 interface PlaylistStudioProps {
   language: Language;
@@ -34,6 +34,9 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
   const [spotifyUrl, setSpotifyUrlInput] = useState('');
   const [isImportingSpotify, setIsImportingSpotify] = useState(false);
   const [isScrapingLocal, setIsScrapingLocal] = useState(false);
+  const [crawlerLogs, setCrawlerLogs] = useState<string[]>([]);
+  const [liveTrackCount, setLiveTrackCount] = useState(0);
+
   const [spotifyError, setSpotifyError] = useState<string | null>(null);
   const [importedCountInfo, setImportedCountInfo] = useState<string | null>(null);
 
@@ -119,21 +122,27 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
     }
   };
 
-  const handleRunLocalScraper = async () => {
+  const handleRunLocalScraperWithLogs = async () => {
     if (!spotifyUrl.trim()) return;
 
     setIsScrapingLocal(true);
     setSpotifyError(null);
     setImportedCountInfo(null);
+    setCrawlerLogs(['🚀 Starten van Live Scraper...']);
+    setLiveTrackCount(0);
 
-    const scraped = await scrapeSpotifyPlaylistLocalAPI(spotifyUrl);
+    const scraped = await scrapeSpotifyPlaylistWithLiveLogs(spotifyUrl, (message, count) => {
+      setCrawlerLogs(prev => [...prev.slice(-15), message]);
+      setLiveTrackCount(count);
+    });
+
     setIsScrapingLocal(false);
 
     if (scraped && scraped.tracks.length > 0) {
       const newPlaylist: CustomPlaylist = {
         id: `scraped_${Date.now()}`,
         name: scraped.name || 'Gecrawlde Playlist',
-        description: `Ingebouwde crawler (${scraped.tracks.length} nummers)`,
+        description: `Ingebouwde Live Scraper (${scraped.tracks.length} nummers)`,
         createdAt: new Date().toISOString(),
         tracks: scraped.tracks
       };
@@ -143,14 +152,8 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
       setActiveTab('single');
       setImportedCountInfo(
         language === 'nl'
-          ? `🤖 Ingebouwde Scraper: ${scraped.tracks.length} nummers gecrawld uit "${scraped.name}"!`
-          : `🤖 Built-in Scraper: ${scraped.tracks.length} tracks crawled from "${scraped.name}"!`
-      );
-    } else {
-      setSpotifyError(
-        language === 'nl'
-          ? 'Ingebouwde scraper kon de afspeellijst niet scrolen. Gebruik optie "Plak Tekstlijst" of API sleutel.'
-          : 'Built-in scraper could not scroll the playlist.'
+          ? `🤖 Live Scraper: ${scraped.tracks.length} nummers gecrawld!`
+          : `🤖 Live Scraper: ${scraped.tracks.length} tracks crawled!`
       );
     }
   };
@@ -256,8 +259,8 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
               </h2>
               <p className="text-xs text-slate-400">
                 {isNl
-                  ? 'Importeer jouw Spotify afspeellijst met ingebouwde crawler!'
-                  : 'Import your Spotify playlist with built-in crawler!'}
+                  ? 'Importeer jouw Spotify afspeellijst met live scraper logging!'
+                  : 'Import your Spotify playlist with live scraper logging!'}
               </p>
             </div>
           </div>
@@ -280,7 +283,7 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
             }`}
           >
             <LinkIcon className="w-3.5 h-3.5" />
-            <span>Spotify Link & Crawler</span>
+            <span>Spotify Link & Live Scraper</span>
           </button>
 
           <button
@@ -308,14 +311,21 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
           </button>
         </div>
 
-        {/* 1. Spotify URL Import & Built-in Crawler */}
+        {/* 1. Spotify URL Import & Live Scraper */}
         {activeTab === 'spotify' && (
           <div className="bg-slate-950/90 p-4 rounded-2xl border border-green-500/30 mb-5 space-y-3">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-green-400 animate-pulse" />
-              <h3 className="text-xs font-extrabold uppercase tracking-wider text-green-300">
-                Plak je Spotify Afspeellijst Link:
-              </h3>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-green-400 animate-pulse" />
+                <h3 className="text-xs font-extrabold uppercase tracking-wider text-green-300">
+                  Plak je Spotify Afspeellijst Link:
+                </h3>
+              </div>
+              {liveTrackCount > 0 && (
+                <span className="text-[10px] font-mono bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full border border-purple-500/40">
+                  ⚡ Live Count: {liveTrackCount}
+                </span>
+              )}
             </div>
 
             <input
@@ -349,23 +359,38 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
 
               <button
                 type="button"
-                onClick={handleRunLocalScraper}
+                onClick={handleRunLocalScraperWithLogs}
                 disabled={isImportingSpotify || isScrapingLocal || !spotifyUrl.trim()}
                 className="py-2.5 px-4 rounded-xl bg-purple-600 text-white font-extrabold text-xs uppercase tracking-wider hover:bg-purple-500 disabled:opacity-40 transition-colors flex items-center justify-center gap-1.5 shadow-lg shadow-purple-600/20"
               >
                 {isScrapingLocal ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Ingebouwde Crawler Loopt...</span>
+                    <span>Live Crawler Loopt...</span>
                   </>
                 ) : (
                   <>
                     <Bot className="w-4 h-4 text-purple-300" />
-                    <span>🤖 Ingebouwde Scraper</span>
+                    <span>🤖 Live Scraper Starten</span>
                   </>
                 )}
               </button>
             </div>
+
+            {/* Live Terminal Console Log Box */}
+            {(crawlerLogs.length > 0 || isScrapingLocal) && (
+              <div className="p-3 rounded-xl bg-slate-950 border border-purple-500/40 text-left font-mono text-[11px] space-y-1 max-h-36 overflow-y-auto animate-fade-in shadow-inner">
+                <div className="flex items-center gap-1.5 text-purple-400 border-b border-slate-900 pb-1 mb-1 font-bold text-[10px] uppercase tracking-wider">
+                  <Terminal className="w-3 h-3" />
+                  <span>Live Crawler Log Status:</span>
+                </div>
+                {crawlerLogs.map((log, i) => (
+                  <div key={i} className="text-slate-300 leading-tight">
+                    {log}
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Expandable Spotify API Keys */}
             <div className="pt-2 border-t border-slate-900">

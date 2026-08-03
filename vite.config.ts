@@ -8,7 +8,7 @@ function spotifyScraperPlugin() {
   return {
     name: 'spotify-scraper-plugin',
     configureServer(server: any) {
-      server.middlewares.use('/api/scrape-playlist', async (req: any, res: any) => {
+      server.middlewares.use('/api/scrape-playlist-stream', async (req: any, res: any) => {
         if (req.method !== 'POST') {
           res.statusCode = 405;
           res.end(JSON.stringify({ error: 'Method not allowed' }));
@@ -21,27 +21,36 @@ function spotifyScraperPlugin() {
         });
 
         req.on('end', async () => {
+          res.setHeader('Content-Type', 'text/event-stream');
+          res.setHeader('Cache-Control', 'no-cache');
+          res.setHeader('Connection', 'keep-alive');
+
+          const sendLog = (message: string, tracks: any[] = [], isDone = false, isError = false) => {
+            res.write(`data: ${JSON.stringify({ message, tracks, count: tracks.length, isDone, isError })}\n\n`);
+          };
+
           try {
             const data = JSON.parse(body);
             const playlistUrl = data.url;
 
             if (!playlistUrl) {
-              res.statusCode = 400;
-              res.end(JSON.stringify({ error: 'Missing playlist URL' }));
+              sendLog('❌ Fout: Geen Spotify URL opgegeven.', [], true, true);
+              res.end();
               return;
             }
 
-            console.log('[Scraper API] Starting Puppeteer scraper for:', playlistUrl);
+            sendLog(`🚀 Browser opstarten voor URL: ${playlistUrl}...`);
 
             const browser = await puppeteer.launch({
               headless: true,
-              args: ['--no-sandbox', '--disable-setuid-sandbox']
+              args: ['--no-sandbox', '--disable-setuid-sandbox', '--window-size=1400,900']
             });
 
             const page = await browser.newPage();
-            await page.setViewport({ width: 1280, height: 900 });
+            await page.setViewport({ width: 1400, height: 900 });
             await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
+            sendLog('🌐 Spotify pagina laden...');
             await page.goto(playlistUrl, { waitUntil: 'networkidle2', timeout: 60000 });
 
             const playlistName = await page.evaluate(() => {
@@ -49,17 +58,20 @@ function spotifyScraperPlugin() {
               return h1 ? h1.innerText.trim() : 'Spotify Playlist';
             });
 
+            sendLog(`🎶 Afspeellijst gedetecteerd: "${playlistName}". Starten met scrolen...`);
+
             const tracksMap = new Map();
             let previousSize = 0;
             let noChangeCount = 0;
 
-            for (let i = 0; i < 80; i++) {
+            for (let i = 1; i <= 150; i++) {
+              // Extract all currently visible track rows
               const visibleTracks = await page.evaluate(() => {
-                const rows = document.querySelectorAll('[data-testid="tracklist-row"], [role="row"]');
+                const rows = document.querySelectorAll('[data-testid="tracklist-row"], [role="row"], div[aria-rowindex]');
                 const results: any[] = [];
 
                 rows.forEach((row) => {
-                  const titleEl = row.querySelector('[data-testid="internal-track-link"], a[href*="/track/"]');
+                  const titleEl = row.querySelector('[data-testid="internal-track-link"], a[href*="/track/"], div[dir="auto"]');
                   const artistEls = row.querySelectorAll('a[href*="/artist/"]');
 
                   if (titleEl) {
@@ -70,12 +82,14 @@ function spotifyScraperPlugin() {
 
                     const artists = Array.from(artistEls).map(a => (a as HTMLElement).innerText.trim()).filter(Boolean).join(', ');
 
-                    results.push({
-                      id: trackId,
-                      title,
-                      artist: artists || 'Unknown Artist',
-                      spotifyUrl: trackId ? `https://open.spotify.com/track/${trackId}` : undefined
-                    });
+                    if (title && title.length > 0 && title !== 'Title' && title !== 'Titel') {
+                      results.push({
+                        id: trackId,
+                        title,
+                        artist: artists || 'Unknown Artist',
+                        spotifyUrl: trackId ? `https://open.spotify.com/track/${trackId}` : undefined
+                      });
+                    }
                   }
                 });
 
@@ -88,36 +102,45 @@ function spotifyScraperPlugin() {
                 }
               });
 
+              const currentTracks = Array.from(tracksMap.values());
+              sendLog(`📜 [Scrol ${i}/150] Nummers verzameld: ${tracksMap.size}...`, currentTracks);
+
               if (tracksMap.size === previousSize) {
                 noChangeCount++;
-                if (noChangeCount >= 6) break;
+                if (noChangeCount >= 10) {
+                  sendLog(`✅ Einde van afspeellijst bereikt! Totaal ${tracksMap.size} nummers.`, currentTracks, true);
+                  break;
+                }
               } else {
                 noChangeCount = 0;
                 previousSize = tracksMap.size;
               }
 
+              // Scroll Spotify's main tracklist container directly + keyboard PageDown
               await page.evaluate(() => {
-                window.scrollBy(0, 900);
+                const mainEl = document.querySelector('main') || 
+                               document.querySelector('[data-testid="playlist-tracklist"]')?.parentElement ||
+                               document.querySelector('[role="main"]') ||
+                               document.documentElement;
+                if (mainEl) {
+                  mainEl.scrollBy(0, 1000);
+                }
+                window.scrollBy(0, 1000);
               });
 
-              await new Promise(r => setTimeout(r, 400));
+              await page.keyboard.press('PageDown');
+              await new Promise(r => setTimeout(r, 450));
             }
 
             await browser.close();
 
             const finalTracks = Array.from(tracksMap.values());
-            console.log(`[Scraper API] Successfully scraped ${finalTracks.length} tracks!`);
-
-            res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify({
-              success: true,
-              name: playlistName,
-              tracks: finalTracks
-            }));
+            sendLog(`🎉 Crawler Klaar! ${finalTracks.length} nummers succesvol geladen.`, finalTracks, true);
+            res.end();
           } catch (err: any) {
-            console.error('[Scraper API Error]:', err);
-            res.statusCode = 500;
-            res.end(JSON.stringify({ error: err.message || 'Scraping failed' }));
+            console.error('[Scraper Stream Error]:', err);
+            sendLog(`❌ Crawler Fout: ${err.message || 'Scraping mislukt'}`, [], true, true);
+            res.end();
           }
         });
       });

@@ -22,29 +22,71 @@ export function extractSpotifyPlaylistId(urlOrId: string): string | null {
 }
 
 /**
- * Call Built-in Local Scraper API (/api/scrape-playlist) if available
+ * Call Built-in Local Live Streaming Scraper API (/api/scrape-playlist-stream)
+ * Streams real-time progress logs e.g. "[Scroll 14/150] Captured 340 tracks" to UI
  */
-export async function scrapeSpotifyPlaylistLocalAPI(playlistUrl: string): Promise<SpotifyImportResult | null> {
+export async function scrapeSpotifyPlaylistWithLiveLogs(
+  playlistUrl: string,
+  onLog: (message: string, count: number) => void
+): Promise<SpotifyImportResult | null> {
   try {
-    const res = await fetch('/api/scrape-playlist', {
+    const res = await fetch('/api/scrape-playlist-stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: playlistUrl })
     });
 
-    if (res.ok) {
-      const data = await res.json();
-      if (data.success && data.tracks && data.tracks.length > 0) {
-        return {
-          name: data.name || 'Spotify Playlist',
-          tracks: data.tracks,
-          totalTracksInPlaylist: data.tracks.length
-        };
+    if (!res.ok || !res.body) {
+      throw new Error(`Server status ${res.status}`);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let finalTracks: CustomTrack[] = [];
+    let playlistName = 'Gecrawlde Spotify Playlist';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = chunk.split('\n');
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const payload = JSON.parse(line.slice(6));
+            if (payload.message) {
+              onLog(payload.message, payload.count || 0);
+            }
+            if (payload.tracks && payload.tracks.length > 0) {
+              finalTracks = payload.tracks;
+            }
+            if (payload.isDone && finalTracks.length > 0) {
+              return {
+                name: playlistName,
+                tracks: finalTracks,
+                totalTracksInPlaylist: finalTracks.length
+              };
+            }
+          } catch {
+            // Partial line chunk, continue
+          }
+        }
       }
     }
-  } catch (e) {
-    // Local API not available (e.g. static production deployment)
+
+    if (finalTracks.length > 0) {
+      return {
+        name: playlistName,
+        tracks: finalTracks,
+        totalTracksInPlaylist: finalTracks.length
+      };
+    }
+  } catch (err: any) {
+    onLog(`❌ Scraper stream fout: ${err.message || 'Verbinding verbroken'}`, 0);
   }
+
   return null;
 }
 
