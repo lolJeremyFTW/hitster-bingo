@@ -90,7 +90,9 @@ export const ClassicTimeline: React.FC<ClassicTimelineProps> = ({
 
   return (
     <div className="w-full">
-      <div className="flex items-center justify-between mb-1.5 px-0.5">
+      {/* Naam en score staan al in de spelersstrip erboven; op een laag scherm
+          is die herhaling verspilde ruimte */}
+      <div className="flex [@media(max-height:480px)]:hidden items-center justify-between mb-1.5 px-0.5">
         <div className="flex items-center gap-2 min-w-0">
           <span className="font-black text-sm text-slate-100 truncate">{player.name}</span>
           {player.isHost && <Crown className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
@@ -110,14 +112,36 @@ export const ClassicTimeline: React.FC<ClassicTimelineProps> = ({
           if (rowIdx === 1 && row.length === 0 && player.timeline.length < 5) return null;
           const offset = rowIdx * 5;
 
+          // Op een liggende telefoon is de hóógte krap, niet de breedte —
+          // dus sturen op max-height in plaats van op sm:/lg:
           return (
-            <div key={rowIdx} className="flex items-stretch gap-0.5 h-20 sm:h-24">
-              {row.map((card, i) => {
+            <div
+              key={rowIdx}
+              className="flex items-stretch gap-0.5 h-20 lg:h-24 [@media(max-height:480px)]:h-[3.25rem]"
+            >
+              {/* Altijd vijf even brede cellen, ook als de rij half vol is —
+                  anders rekt één kaart uit over de hele breedte */}
+              {Array.from({ length: 5 }, (_, i) => {
+                const card = row[i];
                 const position = offset + i;
+
+                if (!card) {
+                  // Alleen de eerstvolgende lege plek is een echte invoegplek
+                  const isNextSlot = position === player.timeline.length;
+                  return (
+                    <React.Fragment key={`empty-${position}`}>
+                      {isNextSlot && renderSlot(position)}
+                      <div className="flex-1 basis-0 min-w-0 rounded-lg border border-dashed border-slate-800/60" />
+                    </React.Fragment>
+                  );
+                }
+
                 return (
-                  <React.Fragment key={card.trackId}>
+                  // Positie meenemen: een track kan in theorie twee keer op een
+                  // tijdlijn belanden en dan botsen de keys
+                  <React.Fragment key={`${card.trackId}-${position}`}>
                     {renderSlot(position)}
-                    <div className="flex-1 min-w-0 rounded-lg bg-gradient-to-b from-slate-800 to-slate-900 border border-slate-700 p-1 flex flex-col items-center justify-center text-center shadow">
+                    <div className="flex-1 basis-0 min-w-0 rounded-lg bg-gradient-to-b from-slate-800 to-slate-900 border border-slate-700 p-1 flex flex-col items-center justify-center text-center shadow">
                       <div className="font-black text-sm sm:text-base text-amber-300 leading-none">
                         {card.year}
                       </div>
@@ -131,8 +155,8 @@ export const ClassicTimeline: React.FC<ClassicTimelineProps> = ({
                   </React.Fragment>
                 );
               })}
-              {/* Sluitende invoegplek aan het eind van de laatste gevulde rij */}
-              {(rowIdx === 1 || player.timeline.length <= 5) && renderSlot(offset + row.length)}
+              {/* Sluitende plek helemaal rechts als de rij vol is */}
+              {row.length === 5 && renderSlot(offset + 5)}
             </div>
           );
         })}

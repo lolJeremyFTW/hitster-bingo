@@ -21,7 +21,7 @@ import { getHitsterCategories } from './data/hitsterCategories';
 import { soundEffects } from './utils/soundEffects';
 import { getTranslation } from './utils/translations';
 import { OFFICIAL_HITSTER_DECK } from './data/hitsterDeck';
-import { ArrowLeft, RefreshCw, QrCode } from 'lucide-react';
+import { ArrowLeft, RefreshCw, QrCode, BookOpen } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
 export function App() {
@@ -202,6 +202,105 @@ export function App() {
   };
 
   const roomUrl = `${window.location.origin}${window.location.pathname}?room=${roomCode}&mode=${gameMode}&grid=${gridSize}`;
+
+  // Klassieke modus speelt fullscreen: geen navbar, geen footer, geen marges.
+  // Op een horizontaal gehouden telefoon is elke pixel nodig voor de tijdlijn.
+  if (isClassicMode && isInGame && classicState) {
+    return (
+      <div className="fixed inset-0 bg-slate-950 text-slate-100 flex flex-col font-sans overflow-hidden">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-slate-800 shrink-0">
+          <button
+            onClick={() => { setIsInGame(false); setClassicState(null); room.leaveRoom(); }}
+            className="p-1.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-400 hover:text-white"
+            title={language === 'nl' ? 'Kamer verlaten' : 'Leave room'}
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+
+          <span className="font-black text-sm text-amber-300 tracking-wide">HITSTER</span>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setShowScoreboard(true)}
+              className="px-2 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-[11px] font-bold text-amber-300"
+            >
+              #{roomCode}
+            </button>
+            <button
+              onClick={() => setShowQRShare(true)}
+              className="p-1.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-400 hover:text-white"
+            >
+              <QrCode className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setShowRules(true)}
+              className="p-1.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-400 hover:text-white"
+            >
+              <BookOpen className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-1.5 sm:p-3">
+          <ClassicGame
+            state={classicState}
+            setState={(updater) => setClassicState(prev => (prev ? updater(prev) : prev))}
+            tracks={activeTrackDeck}
+            language={language}
+            localPlayerId={localPlayerId}
+          />
+        </div>
+
+        {/* Hint die alleen staand verschijnt: het spel wil de breedte */}
+        <div className="portrait:flex hidden items-center justify-center gap-1.5 px-3 py-1.5 bg-amber-500/15 border-t border-amber-500/30 text-[11px] text-amber-200 shrink-0">
+          <RefreshCw className="w-3.5 h-3.5" />
+          <span>
+            {language === 'nl'
+              ? 'Draai je telefoon horizontaal voor de volledige tijdlijn'
+              : 'Turn your phone sideways for the full timeline'}
+          </span>
+        </div>
+
+        {showScoreboard && (
+          <Scoreboard
+            language={language}
+            onClose={() => setShowScoreboard(false)}
+            roomPlayers={room.players}
+            roomCode={room.roomCode}
+            roomStatus={room.status}
+            roomError={room.error}
+            myPlayerId={room.myPlayerId}
+            liveStats={Object.fromEntries(classicState.players.map(p => [
+              p.id, { cards: p.timeline.length, tokens: p.tokens },
+            ]))}
+          />
+        )}
+        {showRules && (
+          <RulesModal language={language} gameMode={gameMode} onClose={() => setShowRules(false)} />
+        )}
+        {showQRShare && (
+          <div
+            className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4"
+            onClick={() => setShowQRShare(false)}
+          >
+            <div className="bg-slate-900 border border-amber-500/40 rounded-3xl p-6 text-center" onClick={e => e.stopPropagation()}>
+              <h3 className="font-black text-lg text-amber-200 mb-3">
+                #{roomCode}
+              </h3>
+              <div className="bg-white p-3 rounded-2xl inline-block">
+                <QRCodeSVG value={roomUrl} size={180} />
+              </div>
+              <p className="text-[11px] text-slate-400 mt-3 max-w-[15rem]">
+                {language === 'nl'
+                  ? 'Laat anderen dit scannen. Ze kiezen een naam en staan meteen op het scorebord.'
+                  : 'Let others scan this. They pick a name and appear on the scoreboard.'}
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-amber-500 selection:text-slate-950">

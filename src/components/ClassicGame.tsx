@@ -69,13 +69,13 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
   }, [snippetSeconds]);
 
   const handleDraw = useCallback(() => {
-    const track = drawTrack(tracks, state.usedTrackIds);
+    const track = drawTrack(tracks, state.usedTrackIds, state.players);
     if (!track) return;
     setState(prev => ({ ...prev, currentTrack: track, phase: 'listening', placedPosition: null, steals: [] }));
     setOutcome(null);
     setViewedPlayerId(null);
     soundEffects.playSpinSelected();
-  }, [tracks, state.usedTrackIds, setState]);
+  }, [tracks, state.usedTrackIds, state.players, setState]);
 
   const handlePlay = useCallback(async () => {
     if (!state.currentTrack?.spotifyUri) return;
@@ -127,7 +127,7 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {/* Spelersstrip: munten en kaarten van iedereen, klikbaar om te bekijken */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1">
         {state.players.map(p => {
@@ -175,8 +175,18 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
         </div>
       )}
 
+      {/* Zonder Spotify-URI kan de SDK niets afspelen; zeg dat, in plaats van
+          alleen een uitgeschakelde knop te tonen */}
+      {state.currentTrack && !state.currentTrack.spotifyUri && (
+        <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-[11px] text-amber-200 leading-relaxed">
+          {isNl
+            ? 'Deze nummers hebben geen Spotify-koppeling, dus er is niets af te spelen. Open de Afspeellijst Studio, log in met Spotify en importeer je playlist met "Alles + afspeelbaar".'
+            : 'These tracks have no Spotify link, so there is nothing to play. Open the Playlist Studio, log in with Spotify and import with "All + playable".'}
+        </div>
+      )}
+
       {/* Speler en fragment */}
-      <div className="flex flex-wrap items-center gap-2 p-3 rounded-2xl bg-slate-900/90 border border-slate-700">
+      <div className="flex flex-wrap items-center gap-2 p-2 sm:p-3 rounded-2xl bg-slate-900/90 border border-slate-700">
         {!state.currentTrack ? (
           <button
             onClick={handleDraw}
@@ -273,15 +283,15 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
       )}
 
       {/* Tijdlijn van de bekeken speler */}
-      <div className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800">
-        <div className="flex items-center gap-1.5 mb-2 text-[10px] uppercase font-black tracking-wider text-slate-400">
-          <Users className="w-3.5 h-3.5" />
-          <span>
-            {isViewingActive
-              ? (isNl ? 'Tijdlijn van de speler aan de beurt' : "Active player's timeline")
-              : (isNl ? `Je bekijkt de tijdlijn van ${viewed?.name}` : `Viewing ${viewed?.name}'s timeline`)}
-          </span>
-        </div>
+      <div className="p-2 sm:p-3 rounded-2xl bg-slate-950/80 border border-slate-800">
+        {/* Alleen benoemen wanneer je naar iemand anders kijkt; anders is het
+            overbodige regel die verticale ruimte kost */}
+        {!isViewingActive && (
+          <div className="flex items-center gap-1.5 mb-1.5 text-[10px] uppercase font-black tracking-wider text-amber-400">
+            <Users className="w-3.5 h-3.5" />
+            <span>{isNl ? `Tijdlijn van ${viewed?.name}` : `${viewed?.name}'s timeline`}</span>
+          </div>
+        )}
 
         {viewed && (
           <ClassicTimeline

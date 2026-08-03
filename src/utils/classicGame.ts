@@ -256,10 +256,27 @@ export function nextTurn(state: ClassicGameState): ClassicGameState {
   };
 }
 
-/** Een nog niet gespeeld nummer met bekend jaartal. */
-export function drawTrack(tracks: CustomTrack[], usedTrackIds: string[]): CustomTrack | null {
-  const available = tracks.filter(t => t.year && !usedTrackIds.includes(t.id));
-  const pool = available.length > 0 ? available : tracks.filter(t => t.year);
+/**
+ * Een nog niet gespeeld nummer met bekend jaartal.
+ *
+ * Kaarten die al in een tijdlijn liggen worden altijd overgeslagen: dezelfde
+ * titel twee keer op één tijdlijn ziet er kapot uit. Raakt een kleine
+ * afspeellijst op, dan mogen eerder gespeelde maar niet-gewonnen nummers
+ * terugkomen; anders zou het spel doodlopen.
+ */
+export function drawTrack(
+  tracks: CustomTrack[],
+  usedTrackIds: string[],
+  players: ClassicPlayer[] = []
+): CustomTrack | null {
+  const onTimelines = new Set(
+    players.flatMap(p => p.timeline.map(c => c.trackId))
+  );
+
+  const withYear = tracks.filter(t => t.year && !onTimelines.has(t.id));
+  const fresh = withYear.filter(t => !usedTrackIds.includes(t.id));
+
+  const pool = fresh.length > 0 ? fresh : withYear;
   if (pool.length === 0) return null;
   return pool[Math.floor(Math.random() * pool.length)];
 }
