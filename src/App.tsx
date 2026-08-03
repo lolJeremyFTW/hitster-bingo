@@ -114,10 +114,12 @@ export function App() {
   /** Meedoen aan een bestaande kamer met de gekozen naam. */
   const handleJoinWithName = async (name: string) => {
     if (!pendingJoinCode) return;
-    const ok = await room.joinRoom(pendingJoinCode, name);
-    if (!ok) return;
+    const roomMode = await room.joinRoom(pendingJoinCode, name);
+    if (!roomMode) return;
     setPendingJoinCode(null);
-    handleStartGame(gameMode, gridSize, pendingJoinCode);
+    // De kamer bepaalt het spel: wie een klassieke kamer joint krijgt klassiek,
+    // ook als in de lobby nog bingo aanstond
+    handleStartGame(roomMode as GameMode, gridSize, pendingJoinCode);
   };
 
   const handleStartGame = (mode: GameMode, grid: GridSize, code: string) => {
@@ -144,8 +146,9 @@ export function App() {
     }
 
     // Host opent de kamer, zodat anderen via de QR-code kunnen binnenkomen
-    if (!room.roomCode) {
-      room.createRoom(code, mode, language === 'nl' ? 'Host' : 'Host');
+    // Alleen de host opent de kamer; een joiner is al via joinRoom binnen
+    if (!room.roomCode && !room.myPlayerId) {
+      room.createRoom(code, mode, 'Host');
     }
 
     if (!useHitsterRules) {
@@ -327,7 +330,9 @@ export function App() {
           <RoomLobby
             language={language}
             onStartGame={handleStartGame}
-            onJoinRoom={(code) => handleStartGame(gameMode, gridSize, code)}
+            // Ook via een ingetypte code eerst een naam kiezen; anders sta je
+            // op niemands scorebord en weet de app de modus van de kamer niet
+            onJoinRoom={(code) => setPendingJoinCode(code)}
             activeRoomCode={roomCode}
             onOpenPlaylistStudio={() => setShowPlaylistStudio(true)}
           />

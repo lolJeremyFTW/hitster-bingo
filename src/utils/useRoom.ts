@@ -38,7 +38,8 @@ interface UseRoomResult {
   isHost: boolean;
   sharedState: Record<string, unknown> | null;
   createRoom: (code: string, mode: string, hostName: string) => Promise<boolean>;
-  joinRoom: (code: string, name: string) => Promise<boolean>;
+  /** Geeft de modus van de kamer terug, zodat de joiner hetzelfde spel krijgt */
+  joinRoom: (code: string, name: string) => Promise<string | null>;
   updateSharedState: (state: unknown) => Promise<void>;
   leaveRoom: () => Promise<void>;
 }
@@ -162,25 +163,28 @@ export function useRoom(): UseRoomResult {
 
   const joinRoom = useCallback(async (code: string, name: string) => {
     const sb = getSupabase();
-    if (!sb) { setStatus('offline'); setError('Supabase is niet geconfigureerd.'); return false; }
+    if (!sb) { setStatus('offline'); setError('Supabase is niet geconfigureerd.'); return null; }
 
-    if (joinGuard.current) return false;
+    if (joinGuard.current) return null;
     joinGuard.current = true;
 
     setStatus('connecting');
     setError(null);
 
+    // mode meelezen: de kamer bepaalt welk spel er gespeeld wordt, niet wat
+    // deze telefoon toevallig in de lobby had aangeklikt
     const { data: room, error: roomErr } = await sb
       .from('rooms')
-      .select('code,state,is_open')
+      .select('code,mode,state,is_open')
       .eq('code', code)
       .maybeSingle();
 
-    if (roomErr) { setError(describe(roomErr)); return false; }
+    if (roomErr) { setError(describe(roomErr)); return null; }
     if (!room) {
+      joinGuard.current = false;
       setStatus('offline');
       setError(`Kamer ${code} bestaat niet. Laat de host het spel eerst starten.`);
-      return false;
+      return null;
     }
 
     const { data: player, error: playerErr } = await sb
@@ -189,7 +193,7 @@ export function useRoom(): UseRoomResult {
       .select('id')
       .single();
 
-    if (playerErr) { setError(describe(playerErr)); return false; }
+    if (playerErr) { setError(describe(playerErr)); return null; }
 
     const pid = player.id as string;
     sessionStorage.setItem(PLAYER_ID_KEY, pid);
@@ -201,7 +205,7 @@ export function useRoom(): UseRoomResult {
 
     await refreshPlayers(code);
     subscribe(code);
-    return true;
+    return (room.mode as string) ?? null;
   }, [refreshPlayers, subscribe]);
 
   const updateSharedState = useCallback(async (state: unknown) => {
