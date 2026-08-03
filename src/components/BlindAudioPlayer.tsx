@@ -10,12 +10,17 @@ interface BlindAudioPlayerProps {
   language: Language;
   /** Lengte van het fragment in seconden */
   snippetSeconds?: number;
+  /** Meldt welk nummer nu blind speelt, zodat het bingobord kan meekijken */
+  onTrackDrawn?: (track: CustomTrack) => void;
+  onRevealChange?: (revealed: boolean) => void;
 }
 
 export const BlindAudioPlayer: React.FC<BlindAudioPlayerProps> = ({
   tracks,
   language,
-  snippetSeconds = 25
+  snippetSeconds = 25,
+  onTrackDrawn,
+  onRevealChange
 }) => {
   const [currentTrackIndex, setCurrentTrackIndex] = useState<number | null>(null);
   const [isRevealed, setIsRevealed] = useState(false);
@@ -73,6 +78,9 @@ export const BlindAudioPlayer: React.FC<BlindAudioPlayerProps> = ({
     setIsRevealed(false);
     setPlayedCount(prev => prev + 1);
 
+    onTrackDrawn?.(tracks[randomIndex]);
+    onRevealChange?.(false);
+
     soundEffects.playSpinSelected();
   };
 
@@ -102,6 +110,7 @@ export const BlindAudioPlayer: React.FC<BlindAudioPlayerProps> = ({
 
   const handleReveal = () => {
     setIsRevealed(true);
+    onRevealChange?.(true);
     soundEffects.playBingoVictory();
   };
 

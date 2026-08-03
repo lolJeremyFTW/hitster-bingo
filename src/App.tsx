@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
 import { RoomLobby } from './components/RoomLobby';
 import { DiscoBallSpinner } from './components/DiscoBallSpinner';
+import { HitsterDiscoBall } from './components/HitsterDiscoBall';
+import { AnswerBox } from './components/AnswerBox';
 import { Timer25s } from './components/Timer25s';
 import { BingoGrid } from './components/BingoGrid';
 import { VictoryModal } from './components/VictoryModal';
@@ -9,8 +11,9 @@ import { RulesModal } from './components/RulesModal';
 import { PlaylistStudio } from './components/PlaylistStudio';
 import { Scoreboard } from './components/Scoreboard';
 import { BlindAudioPlayer } from './components/BlindAudioPlayer';
-import type { BingoCategory, BingoTile, CustomPlaylist, GameMode, GridSize, Language } from './types/hitster';
-import { checkBingoWin, generateBingoBoard, generateRoomSeed, getCategoriesForMode } from './utils/bingoEngine';
+import type { BingoCategory, BingoTile, CustomPlaylist, CustomTrack, GameMode, GridSize, HitsterColor, Language } from './types/hitster';
+import { checkBingoWin, generateBingoBoard, generateHitsterBoard, generateRoomSeed, getCategoriesForMode } from './utils/bingoEngine';
+import { getHitsterCategories } from './data/hitsterCategories';
 import { soundEffects } from './utils/soundEffects';
 import { getTranslation } from './utils/translations';
 import { OFFICIAL_HITSTER_DECK } from './data/hitsterDeck';
@@ -34,6 +37,27 @@ export function App() {
   const [playerSeed] = useState(() => Math.floor(Math.random() * 10000));
 
   const [activePlaylist, setActivePlaylist] = useState<CustomPlaylist | null>(null);
+
+  // Het nummer dat nu blind speelt. Woonde eerst alleen in BlindAudioPlayer,
+  // waardoor het bingobord het jaartal nooit kreeg en de gok-feedback stil bleef.
+  const [currentTrack, setCurrentTrack] = useState<CustomTrack | null>(null);
+  const [isTrackRevealed, setIsTrackRevealed] = useState(false);
+  // Loopt op bij elke nieuwe kaart, zodat de gok-invoer zichzelf reset
+  const [roundKey, setRoundKey] = useState(0);
+
+  // Hitster Bingo-modus: de discobal wijst een kleur aan en die bepaalt wat er
+  // geraden moet worden. Alleen vakjes van die kleur mogen daarna afgekruist.
+  const [activeColor, setActiveColor] = useState<HitsterColor | undefined>();
+  const [answerWasCorrect, setAnswerWasCorrect] = useState(false);
+  // Eén goed antwoord geeft precies één kruisje. Los bijhouden, want de
+  // verdict-callback bevestigt "goed" opnieuw bij elke render.
+  const [hasMarkedThisRound, setHasMarkedThisRound] = useState(false);
+
+  const isHitsterMode = gameMode === 'sideA' || gameMode === 'sideB';
+  const hitsterCategories = getHitsterCategories(gameMode);
+  const activeHitsterCategory = activeColor
+    ? hitsterCategories.find(c => c.color === activeColor)
+    : undefined;
 
   const [showVictory, setShowVictory] = useState(false);
   const [showRules, setShowRules] = useState(false);
@@ -79,21 +103,47 @@ export function App() {
     setRoomCode(code);
 
     const roomSeed = generateRoomSeed(code);
-    const initialTiles = generateBingoBoard(roomSeed, playerSeed, grid, mode, language, true, activeTrackDeck);
+    const useHitsterRules = mode === 'sideA' || mode === 'sideB';
+
+    const initialTiles = useHitsterRules
+      ? generateHitsterBoard(roomSeed, playerSeed, grid, mode, language, true)
+      : generateBingoBoard(roomSeed, playerSeed, grid, mode, language, true, activeTrackDeck);
+
     setTiles(initialTiles);
     setIsInGame(true);
+    setActiveColor(undefined);
+    setAnswerWasCorrect(false);
 
-    const categories = getCategoriesForMode(mode, activeTrackDeck);
-    if (categories.length > 0) {
-      setActiveCategory(categories[0]);
+    if (!useHitsterRules) {
+      const categories = getCategoriesForMode(mode, activeTrackDeck);
+      if (categories.length > 0) setActiveCategory(categories[0]);
     }
   };
 
   const handleTileClick = (index: number) => {
+    const tile = tiles[index];
+    if (!tile) return;
+
+    // In Hitster-modus mag je alleen een vakje van de aangewezen kleur
+    // afkruisen, en alleen als je antwoord goed was. Weghalen mag altijd,
+    // voor als iemand zich vergist.
+    if (isHitsterMode && !tile.isMarked) {
+      const allowed = answerWasCorrect && !hasMarkedThisRound && tile.hitsterColor === activeColor;
+      if (!allowed) {
+        soundEffects.playTilePop(false);
+        return;
+      }
+    }
+
     const newTiles = [...tiles];
     newTiles[index].isMarked = !newTiles[index].isMarked;
     setTiles(newTiles);
     soundEffects.playTilePop(newTiles[index].isMarked);
+
+    // Elk goed antwoord levert precies één kruisje op
+    if (isHitsterMode && newTiles[index].isMarked) {
+      setHasMarkedThisRound(true);
+    }
 
     const winResult = checkBingoWin(newTiles, gridSize);
     setHasWin(winResult.hasWin);
@@ -180,20 +230,51 @@ export function App() {
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="space-y-6 lg:col-span-1">
-                <DiscoBallSpinner
-                  categories={getCategoriesForMode(gameMode, activeTrackDeck)}
-                  activeCategory={activeCategory}
-                  onCategorySelected={setActiveCategory}
-                  language={language}
-                />
+                {isHitsterMode ? (
+                  <HitsterDiscoBall
+                    categories={hitsterCategories}
+                    activeColor={activeColor}
+                    onColorSelected={(color) => {
+                      setActiveColor(color);
+                      setAnswerWasCorrect(false);
+                      setHasMarkedThisRound(false);
+                    }}
+                    language={language}
+                  />
+                ) : (
+                  <DiscoBallSpinner
+                    categories={getCategoriesForMode(gameMode, activeTrackDeck)}
+                    activeCategory={activeCategory}
+                    onCategorySelected={setActiveCategory}
+                    language={language}
+                  />
+                )}
                 <BlindAudioPlayer
                   tracks={activeTrackDeck}
                   language={language}
+                  onTrackDrawn={(track) => {
+                    setCurrentTrack(track);
+                    setIsTrackRevealed(false);
+                    setRoundKey(k => k + 1);
+                    setAnswerWasCorrect(false);
+                    setHasMarkedThisRound(false);
+                  }}
+                  onRevealChange={setIsTrackRevealed}
                 />
                 <Timer25s language={language} />
               </div>
 
               <div className="lg:col-span-2">
+                {isHitsterMode && (
+                  <AnswerBox
+                    key={roundKey}
+                    category={activeHitsterCategory}
+                    track={currentTrack}
+                    isRevealed={isTrackRevealed}
+                    language={language}
+                    onVerdict={(v) => setAnswerWasCorrect(!!v?.correct)}
+                  />
+                )}
                 <BingoGrid
                   tiles={tiles}
                   gridSize={gridSize}
@@ -202,6 +283,12 @@ export function App() {
                   onCallBingo={handleCallBingo}
                   hasWin={hasWin}
                   language={language}
+                  // Pas ná het onthullen doorgeven, anders verklapt de
+                  // gok-feedback het antwoord tijdens de 25 seconden
+                  actualYear={isTrackRevealed ? currentTrack?.year : undefined}
+                  roundKey={roundKey}
+                  hideYearGuess={isHitsterMode}
+                  markableColor={answerWasCorrect && !hasMarkedThisRound ? activeColor : undefined}
                 />
               </div>
             </div>

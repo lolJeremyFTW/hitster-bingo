@@ -1,5 +1,6 @@
-import type { BingoCategory, BingoTile, CustomTrack, GameMode, GridSize, Language } from '../types/hitster';
+import type { BingoCategory, BingoTile, CustomTrack, GameMode, GridSize, HitsterColor, Language } from '../types/hitster';
 import { CAMPFIRE_EXTRA_CATEGORIES, SIDE_A_CATEGORIES, SIDE_B_CATEGORIES } from '../data/categories';
+import { getHitsterCategories } from '../data/hitsterCategories';
 
 // Simple PRNG (Linear Congruential Generator) for reproducible seeded card generation
 function pseudoRandom(seed: number) {
@@ -240,6 +241,80 @@ export function generateBingoBoard(
       iconName: catObj.iconName,
       color: catObj.color,
       isMarked: false,
+    });
+  }
+
+  return tiles;
+}
+
+/**
+ * Bouwt een Hitster Bingo-scorekaart: vakjes in de vijf discobal-kleuren,
+ * zo gelijkmatig mogelijk verdeeld en daarna geschud.
+ *
+ * Anders dan het oude bord staat er geen opdracht op een vakje — de kleur ís
+ * de opdracht. Welke kleur telt, bepaalt de discobal per ronde.
+ */
+export function generateHitsterBoard(
+  roomSeed: number,
+  playerSeed: number,
+  gridSize: GridSize,
+  mode: GameMode,
+  language: Language,
+  includeFreeSpace: boolean = true
+): BingoTile[] {
+  const categories = getHitsterCategories(mode);
+  const totalTiles = gridSize * gridSize;
+  const rand = pseudoRandom(roomSeed + playerSeed * 9999);
+  const isNl = language === 'nl';
+
+  const middleIndex = Math.floor(totalTiles / 2);
+  const hasFreeSpace = includeFreeSpace && (gridSize === 3 || gridSize === 5);
+  const colouredCount = hasFreeSpace ? totalTiles - 1 : totalTiles;
+
+  // Gelijkmatig verdelen: elke kleur even vaak, de rest willekeurig aangevuld
+  const pool: HitsterColor[] = [];
+  const perColour = Math.floor(colouredCount / categories.length);
+  categories.forEach(cat => {
+    for (let i = 0; i < perColour; i++) pool.push(cat.color);
+  });
+  while (pool.length < colouredCount) {
+    pool.push(categories[Math.floor(rand() * categories.length)].color);
+  }
+
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+
+  const tiles: BingoTile[] = [];
+  let poolIndex = 0;
+
+  for (let i = 0; i < totalTiles; i++) {
+    if (hasFreeSpace && i === middleIndex) {
+      tiles.push({
+        id: `free_${i}`,
+        categoryId: 'free_space',
+        title: isNl ? 'VRIJ VAKJE ⛺' : 'FREE SPACE ⛺',
+        description: isNl ? 'Gratis afgekruist vakje!' : 'Free marked tile!',
+        iconName: 'Flame',
+        color: 'from-amber-500 to-red-500',
+        isMarked: true,
+      });
+      continue;
+    }
+
+    const colour = pool[poolIndex++];
+    const cat = categories.find(c => c.color === colour)!;
+
+    tiles.push({
+      id: `tile_${i}_${colour}`,
+      categoryId: colour,
+      title: isNl ? cat.labelNl : cat.labelEn,
+      description: isNl ? cat.hintNl : cat.hintEn,
+      iconName: 'Disc',
+      color: cat.tileClass,
+      isMarked: false,
+      hitsterColor: colour,
     });
   }
 

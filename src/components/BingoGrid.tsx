@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Check, Info, Sparkles, Flame, HelpCircle } from 'lucide-react';
-import type { BingoTile, GridSize, Language } from '../types/hitster';
+import type { BingoTile, GridSize, HitsterColor, Language } from '../types/hitster';
 import { getTranslation } from '../utils/translations';
 import { soundEffects } from '../utils/soundEffects';
 import { YearGuessBox } from './YearGuessBox';
@@ -14,6 +14,12 @@ interface BingoGridProps {
   hasWin: boolean;
   language: Language;
   actualYear?: number;
+  /** Verandert per getrokken nummer; reset de gok-invoer */
+  roundKey?: number;
+  /** In Hitster-modus regelt AnswerBox de invoer, dus geen losse jaar-gok */
+  hideYearGuess?: boolean;
+  /** Kleur die nu afgekruist mag worden; laat die vakjes oplichten */
+  markableColor?: HitsterColor;
 }
 
 export const BingoGrid: React.FC<BingoGridProps> = ({
@@ -24,7 +30,10 @@ export const BingoGrid: React.FC<BingoGridProps> = ({
   onCallBingo,
   hasWin,
   language,
-  actualYear
+  actualYear,
+  roundKey,
+  hideYearGuess = false,
+  markableColor
 }) => {
   const [selectedHintTile, setSelectedHintTile] = useState<BingoTile | null>(null);
 
@@ -46,7 +55,10 @@ export const BingoGrid: React.FC<BingoGridProps> = ({
   return (
     <div className="w-full flex flex-col items-center">
       {/* Year Lock-in Guess Assistant Box */}
-      <YearGuessBox language={language} actualYear={actualYear} />
+      {/* key op roundKey: nieuw nummer betekent een schone gok-invoer */}
+      {!hideYearGuess && (
+        <YearGuessBox key={roundKey} language={language} actualYear={actualYear} />
+      )}
 
       {/* Board Header Status */}
       <div className="w-full flex items-center justify-between px-2 mb-3">
@@ -70,6 +82,24 @@ export const BingoGrid: React.FC<BingoGridProps> = ({
         {tiles.map((tile, idx) => {
           const isWinningTile = winningIndices.includes(idx);
           const isFreeSpace = tile.categoryId === 'free_space';
+          // Vakje van de kleur die de discobal aanwees, en het antwoord klopte
+          const isMarkable = !!markableColor && !tile.isMarked && tile.hitsterColor === markableColor;
+
+          let tileClass: string;
+          if (tile.isMarked) {
+            tileClass = isWinningTile
+              ? 'bg-gradient-to-tr from-amber-600 via-yellow-500 to-orange-500 text-slate-950 shadow-lg shadow-yellow-500/40 ring-2 ring-yellow-300 animate-pulse'
+              : 'bg-gradient-to-tr from-amber-950/90 via-slate-900 to-slate-950 text-amber-300 border-2 border-amber-500/60 shadow-md shadow-amber-950/50';
+          } else if (tile.hitsterColor) {
+            // Kleur ís de opdracht, dus altijd tonen — feller zodra hij mag
+            tileClass = `bg-gradient-to-tr ${tile.color} ${
+              isMarkable
+                ? 'ring-4 ring-white/90 shadow-xl scale-[1.03] animate-pulse cursor-pointer'
+                : 'opacity-50 saturate-50'
+            }`;
+          } else {
+            tileClass = 'bg-slate-900/80 border border-slate-800 text-slate-200 hover:border-amber-500/40';
+          }
 
           return (
             <div
@@ -79,13 +109,7 @@ export const BingoGrid: React.FC<BingoGridProps> = ({
                   onTileClick(idx);
                 }
               }}
-              className={`relative aspect-square rounded-xl p-2 sm:p-3 flex flex-col items-center justify-between text-center select-none cursor-pointer transition-all duration-200 group transform active:scale-95 ${
-                tile.isMarked
-                  ? isWinningTile
-                    ? 'bg-gradient-to-tr from-amber-600 via-yellow-500 to-orange-500 text-slate-950 shadow-lg shadow-yellow-500/40 ring-2 ring-yellow-300 animate-pulse'
-                    : 'bg-gradient-to-tr from-amber-950/90 via-slate-900 to-slate-950 text-amber-300 border-2 border-amber-500/60 shadow-md shadow-amber-950/50'
-                  : 'bg-slate-900/80 border border-slate-800 text-slate-200 hover:border-amber-500/40 hover:bg-slate-850'
-              }`}
+              className={`relative aspect-square rounded-xl p-2 sm:p-3 flex flex-col items-center justify-between text-center select-none cursor-pointer transition-all duration-200 group transform active:scale-95 ${tileClass}`}
             >
               <button
                 onClick={(e) => {

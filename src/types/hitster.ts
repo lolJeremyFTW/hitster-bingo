@@ -4,6 +4,35 @@ export type GridSize = 3 | 4 | 5;
 
 export type Language = 'nl' | 'en';
 
+/** De vijf kleuren van de discobal; elke kleur is één categorie per zijde. */
+export type HitsterColor = 'green' | 'pink' | 'yellow' | 'purple' | 'blue';
+
+/**
+ * Wat de speler moet invullen bij een categorie.
+ * - year: een jaartal, goed binnen `tolerance` jaar
+ * - decade: een decennium (1980 telt voor 1980-1989)
+ * - beforeAfter: keuze rond een grensjaar
+ * - soloGroup: keuze tussen solo-artiest en groep
+ * - title / artist: vrije tekst, tolerant vergeleken
+ */
+export type AnswerType = 'year' | 'decade' | 'beforeAfter' | 'soloGroup' | 'title' | 'artist';
+
+export interface HitsterCategory {
+  color: HitsterColor;
+  labelNl: string;
+  labelEn: string;
+  hintNl: string;
+  hintEn: string;
+  answerType: AnswerType;
+  /** Alleen bij answerType 'year': toegestane afwijking in jaren */
+  tolerance?: number;
+  /** Alleen bij answerType 'beforeAfter': het grensjaar */
+  pivotYear?: number;
+  /** Tailwind-klassen voor de tegel */
+  tileClass: string;
+  dotClass: string;
+}
+
 export interface BingoCategory {
   id: string;
   titleNl: string;
@@ -24,6 +53,8 @@ export interface BingoTile {
   color: string;
   isMarked: boolean;
   isWinningTile?: boolean;
+  /** Kleur van dit vakje in de Hitster Bingo-modus */
+  hitsterColor?: HitsterColor;
 }
 
 export interface CustomTrack {
@@ -41,6 +72,8 @@ export interface CustomTrack {
   yearSource?: 'spotify' | 'musicbrainz' | 'manual';
   /** Albumnaam — nodig om compilaties/remasters met een fout jaartal te herkennen */
   albumName?: string;
+  /** Solo-artiest of groep, via MusicBrainz. Onbekend = spelers beoordelen zelf. */
+  artistType?: 'person' | 'group' | 'unknown';
 }
 
 export interface CustomPlaylist {
