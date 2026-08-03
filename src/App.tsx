@@ -5,7 +5,7 @@ import { DiscoBallSpinner } from './components/DiscoBallSpinner';
 import { HitsterDiscoBall } from './components/HitsterDiscoBall';
 import { AnswerBox } from './components/AnswerBox';
 import { ClassicGame } from './components/ClassicGame';
-import { createInitialState, createPlayer, type ClassicGameState } from './utils/classicGame';
+import { createInitialState, createPlayer, DEFAULT_START_TOKENS, type ClassicGameState } from './utils/classicGame';
 import { JoinRoomModal } from './components/JoinRoomModal';
 import { useRoom } from './utils/useRoom';
 import { Timer25s } from './components/Timer25s';
@@ -107,7 +107,7 @@ export function App() {
       if (!prev) return prev;
       const bestaand = new Map(prev.players.map(p => [p.id, p]));
       const samen = room.players.map(rp =>
-        bestaand.get(rp.id) ?? createPlayer(rp.id, rp.name, rp.isHost)
+        bestaand.get(rp.id) ?? createPlayer(rp.id, rp.name, rp.isHost, prev.startTokens)
       );
 
       const zelfde =
@@ -176,7 +176,16 @@ export function App() {
     handleStartGame(roomMode as GameMode, gridSize, pendingJoinCode);
   };
 
-  const handleStartGame = (mode: GameMode, grid: GridSize, code: string) => {
+  /** Wacht op de naam van de host voordat de kamer geopend wordt */
+  const [pendingHost, setPendingHost] = useState<{ mode: GameMode; grid: GridSize; code: string } | null>(null);
+
+  const handleStartGame = (
+    mode: GameMode,
+    grid: GridSize,
+    code: string,
+    hostName?: string,
+    startTokens?: number
+  ) => {
     setGameMode(mode);
     setGridSize(grid);
     setRoomCode(code);
@@ -194,16 +203,17 @@ export function App() {
     setAnswerWasCorrect(false);
 
     if (mode === 'classic') {
-      setClassicState(createInitialState([
-        createPlayer(localPlayerId, language === 'nl' ? 'Jij' : 'You', true),
-      ]));
+      const tokens = startTokens ?? DEFAULT_START_TOKENS;
+      setClassicState(createInitialState(
+        [createPlayer(localPlayerId, hostName || (language === 'nl' ? 'Jij' : 'You'), true, tokens)],
+        tokens
+      ));
     }
 
-    // Host opent de kamer, zodat anderen via de QR-code kunnen binnenkomen
     // Alleen de host opent de kamer. Zitten we al in déze kamer, dan kwamen we
     // via joinRoom binnen en hoeft er niets aangemaakt te worden.
     if (room.roomCode !== code) {
-      room.createRoom(code, mode, 'Host');
+      room.createRoom(code, mode, hostName || 'Host');
     }
 
     if (!useHitsterRules) {
@@ -384,7 +394,8 @@ export function App() {
         {!isInGame ? (
           <RoomLobby
             language={language}
-            onStartGame={handleStartGame}
+            // Eerst een naam kiezen; die staat straks op ieders scorebord
+            onStartGame={(mode, grid, code) => setPendingHost({ mode, grid, code })}
             // Ook via een ingetypte code eerst een naam kiezen; anders sta je
             // op niemands scorebord en weet de app de modus van de kamer niet
             onJoinRoom={(code) => setPendingJoinCode(code)}
@@ -547,6 +558,23 @@ export function App() {
           error={room.error}
           onJoin={handleJoinWithName}
           onCancel={() => setPendingJoinCode(null)}
+        />
+      )}
+
+      {pendingHost && (
+        <JoinRoomModal
+          isHost
+          showTokenSetting={pendingHost.mode === 'classic'}
+          roomCode={pendingHost.code}
+          language={language}
+          status={room.status}
+          error={room.error}
+          onJoin={(name, tokens) => {
+            const { mode, grid, code } = pendingHost;
+            setPendingHost(null);
+            handleStartGame(mode, grid, code, name, tokens);
+          }}
+          onCancel={() => setPendingHost(null)}
         />
       )}
 

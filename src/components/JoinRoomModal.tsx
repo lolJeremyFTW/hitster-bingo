@@ -2,14 +2,19 @@ import React, { useState } from 'react';
 import { Users, Loader2, AlertTriangle, LogIn } from 'lucide-react';
 import type { Language } from '../types/hitster';
 import type { RoomStatus } from '../utils/useRoom';
+import { DEFAULT_START_TOKENS } from '../utils/classicGame';
 
 interface JoinRoomModalProps {
   roomCode: string;
   language: Language;
   status: RoomStatus;
   error: string | null;
-  onJoin: (name: string) => void;
+  onJoin: (name: string, startTokens?: number) => void;
   onCancel: () => void;
+  /** De host opent de kamer in plaats van erin te stappen */
+  isHost?: boolean;
+  /** Toont de muntinstelling; alleen zinvol in de klassieke modus */
+  showTokenSetting?: boolean;
 }
 
 /**
@@ -24,10 +29,21 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
   error,
   onJoin,
   onCancel,
+  isHost = false,
+  showTokenSetting = false,
 }) => {
-  const [name, setName] = useState('');
+  // Naam onthouden, zodat je hem niet elke partij opnieuw hoeft te typen
+  const [name, setName] = useState(() => localStorage.getItem('hitster_player_name') ?? '');
+  const [startTokens, setStartTokens] = useState(DEFAULT_START_TOKENS);
   const isNl = language === 'nl';
   const busy = status === 'connecting';
+
+  const submit = () => {
+    const schoon = name.trim();
+    if (schoon.length < 2) return;
+    localStorage.setItem('hitster_player_name', schoon);
+    onJoin(schoon, startTokens);
+  };
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
@@ -35,20 +51,19 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
         <div className="flex items-center gap-2.5 mb-1">
           <Users className="w-6 h-6 text-amber-400" />
           <h2 className="font-black text-xl text-amber-200">
-            {isNl ? 'Meedoen' : 'Join game'}
+            {isHost
+              ? (isNl ? 'Spel starten' : 'Start game')
+              : (isNl ? 'Meedoen' : 'Join game')}
           </h2>
         </div>
         <p className="text-xs text-slate-400 mb-4">
-          {isNl ? 'Je doet mee aan kamer ' : 'Joining room '}
+          {isHost
+            ? (isNl ? 'Je opent kamer ' : 'Opening room ')
+            : (isNl ? 'Je doet mee aan kamer ' : 'Joining room ')}
           <span className="font-mono font-bold text-amber-300">#{roomCode}</span>
         </p>
 
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (name.trim().length >= 2) onJoin(name.trim());
-          }}
-        >
+        <form onSubmit={(e) => { e.preventDefault(); submit(); }}>
           <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">
             {isNl ? 'Kies je naam' : 'Choose your name'}
           </label>
@@ -65,6 +80,35 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
               ? 'Deze naam zien de andere spelers op het scorebord.'
               : 'Other players see this name on the scoreboard.'}
           </p>
+
+          {isHost && showTokenSetting && (
+            <div className="mt-3">
+              <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">
+                {isNl ? 'Munten om mee te starten' : 'Starting tokens'}
+              </label>
+              <div className="flex gap-1.5">
+                {[0, 1, 2, 3, 4, 5].map(n => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setStartTokens(n)}
+                    className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                      startTokens === n
+                        ? 'bg-amber-500 border-amber-400 text-slate-950'
+                        : 'bg-slate-950 border-slate-700 text-slate-300 hover:border-slate-500'
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
+                {isNl
+                  ? 'Met munten kun je HITSTER roepen en een kaart stelen. Iedereen begint met evenveel.'
+                  : 'Tokens let you call HITSTER and steal a card. Everyone starts with the same amount.'}
+              </p>
+            </div>
+          )}
 
           {error && (
             <div className="mt-3 p-2.5 rounded-xl bg-red-500/15 border border-red-500/40 flex items-start gap-2">
@@ -88,7 +132,11 @@ export const JoinRoomModal: React.FC<JoinRoomModalProps> = ({
               className="flex-1 py-2.5 rounded-xl bg-amber-500 text-slate-950 font-black text-xs uppercase tracking-wider hover:bg-amber-400 disabled:opacity-40 flex items-center justify-center gap-1.5"
             >
               {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
-              {busy ? (isNl ? 'Verbinden…' : 'Joining…') : (isNl ? 'Meedoen' : 'Join')}
+              {busy
+                ? (isNl ? 'Verbinden…' : 'Connecting…')
+                : isHost
+                  ? (isNl ? 'Start spel' : 'Start game')
+                  : (isNl ? 'Meedoen' : 'Join')}
             </button>
           </div>
         </form>

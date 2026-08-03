@@ -54,6 +54,8 @@ export interface ClassicGameState {
    * schrijfactie niet opnieuw wordt toegepast.
    */
   rev: number;
+  /** Waarmee nieuwe spelers binnenkomen, zodat later joinen eerlijk blijft */
+  startTokens: number;
   players: ClassicPlayer[];
   activePlayerIndex: number;
   phase: TurnPhase;
@@ -70,13 +72,25 @@ export interface ClassicGameState {
   roundNumber: number;
 }
 
-export function createPlayer(id: string, name: string, isHost = false): ClassicPlayer {
-  return { id, name, timeline: [], tokens: 0, isHost };
+/** Standaard startvoorraad munten; instelbaar bij het openen van de kamer. */
+export const DEFAULT_START_TOKENS = 2;
+
+export function createPlayer(
+  id: string,
+  name: string,
+  isHost = false,
+  tokens = DEFAULT_START_TOKENS
+): ClassicPlayer {
+  return { id, name, timeline: [], tokens: Math.min(MAX_TOKENS, Math.max(0, tokens)), isHost };
 }
 
-export function createInitialState(players: ClassicPlayer[]): ClassicGameState {
+export function createInitialState(
+  players: ClassicPlayer[],
+  startTokens = DEFAULT_START_TOKENS
+): ClassicGameState {
   return {
     rev: 0,
+    startTokens,
     players,
     activePlayerIndex: 0,
     phase: 'listening',
