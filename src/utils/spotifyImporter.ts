@@ -6,9 +6,6 @@ export interface SpotifyImportResult {
   totalTracksInPlaylist?: number;
 }
 
-/**
- * Extracts Spotify Playlist ID from various URL formats
- */
 export function extractSpotifyPlaylistId(urlOrId: string): string | null {
   const trimmed = urlOrId.trim();
   const playlistMatch = trimmed.match(/playlist[\/:]([a-zA-Z0-9]{22})/);
@@ -22,9 +19,93 @@ export function extractSpotifyPlaylistId(urlOrId: string): string | null {
 }
 
 /**
- * Call Built-in Local Live Streaming Scraper API (/api/scrape-playlist-stream)
- * Streams real-time progress logs e.g. "[Scroll 14/150] Captured 340 tracks" to UI
+ * Super-Smart Batch Text / Spotify Paste Parser:
+ * Supports:
+ * 1. Spotify Desktop/Web tabbed paste: "Title\tArtist\tAlbum\tRelease Date"
+ * 2. Standard text lines: "Bohemian Rhapsody - Queen (1975)"
+ * 3. Bullet/Numbered lines: "1. Africa - Toto 1982"
+ * 4. Spotify Track URLs mixed in text
  */
+export function parseBatchTracksText(rawText: string): CustomTrack[] {
+  const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+  const tracks: CustomTrack[] = [];
+
+  lines.forEach((line, idx) => {
+    // Check if tab-separated (Direct Ctrl+C paste from Spotify Desktop or Web App!)
+    if (line.includes('\t')) {
+      const columns = line.split('\t').map(c => c.trim()).filter(Boolean);
+      if (columns.length >= 2) {
+        const title = columns[0];
+        const artist = columns[1];
+        let year: number | undefined;
+
+        // Find year in any column (e.g. "1975-10-31" or "1975")
+        for (const col of columns) {
+          const yMatch = col.match(/\b(19\d{2}|20[0-2]\d)\b/);
+          if (yMatch) {
+            year = parseInt(yMatch[1], 10);
+            break;
+          }
+        }
+
+        if (title && title.toLowerCase() !== 'title' && title.toLowerCase() !== 'titel') {
+          tracks.push({
+            id: `paste_tab_${idx}_${Date.now()}`,
+            title,
+            artist,
+            year
+          });
+          return;
+        }
+      }
+    }
+
+    // Strip leading track numbers e.g. "1. ", "02 - "
+    const cleanLine = line.replace(/^\d+[\.\s\-]+\s*/, '');
+
+    // Extract release year if present
+    let year: number | undefined;
+    const yearMatch = cleanLine.match(/[\(\[\,\s\•](\d{4})[\)\]\s]?/);
+    if (yearMatch) {
+      year = parseInt(yearMatch[1], 10);
+    }
+
+    const textWithoutYear = cleanLine.replace(/[\(\[\,]\s*\d{4}\s*[\)\]]?/, '').trim();
+
+    let title = textWithoutYear;
+    let artist = 'Unknown Artist';
+
+    if (textWithoutYear.includes(' - ')) {
+      const parts = textWithoutYear.split(' - ');
+      title = parts[0].trim();
+      artist = parts.slice(1).join(' - ').trim();
+    } else if (textWithoutYear.includes(' • ')) {
+      const parts = textWithoutYear.split(' • ');
+      title = parts[0].trim();
+      artist = parts.slice(1).join(' • ').trim();
+    } else if (textWithoutYear.includes(' by ')) {
+      const parts = textWithoutYear.split(' by ');
+      title = parts[0].trim();
+      artist = parts.slice(1).join(' by ').trim();
+    } else if (textWithoutYear.includes('|')) {
+      const parts = textWithoutYear.split('|');
+      title = parts[0].trim();
+      if (parts[1]) artist = parts[1].trim();
+    }
+
+    if (title && title.length > 0) {
+      tracks.push({
+        id: `paste_${idx}_${Date.now()}`,
+        title,
+        artist,
+        year
+      });
+    }
+  });
+
+  return tracks;
+}
+
 export async function scrapeSpotifyPlaylistWithLiveLogs(
   playlistUrl: string,
   onLog: (message: string, count: number) => void
@@ -43,7 +124,6 @@ export async function scrapeSpotifyPlaylistWithLiveLogs(
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let finalTracks: CustomTrack[] = [];
-    let playlistName = 'Gecrawlde Spotify Playlist';
 
     while (true) {
       const { done, value } = await reader.read();
@@ -64,13 +144,13 @@ export async function scrapeSpotifyPlaylistWithLiveLogs(
             }
             if (payload.isDone && finalTracks.length > 0) {
               return {
-                name: playlistName,
+                name: 'Gecrawlde Playlist',
                 tracks: finalTracks,
                 totalTracksInPlaylist: finalTracks.length
               };
             }
           } catch {
-            // Partial line chunk, continue
+            // Continue
           }
         }
       }
@@ -78,7 +158,7 @@ export async function scrapeSpotifyPlaylistWithLiveLogs(
 
     if (finalTracks.length > 0) {
       return {
-        name: playlistName,
+        name: 'Gecrawlde Playlist',
         tracks: finalTracks,
         totalTracksInPlaylist: finalTracks.length
       };
@@ -90,9 +170,6 @@ export async function scrapeSpotifyPlaylistWithLiveLogs(
   return null;
 }
 
-/**
- * Fetches ALL 800+ tracks directly from Spotify's Official Web API using Client Credentials
- */
 export async function fetchAllTracksFromSpotifyAPI(
   playlistId: string,
   clientId: string,
@@ -184,9 +261,6 @@ export async function fetchAllTracksFromSpotifyAPI(
   }
 }
 
-/**
- * Public Embed Fallback Importer
- */
 export async function fetchSpotifyPlaylistPublic(playlistUrlOrId: string): Promise<SpotifyImportResult | null> {
   const playlistId = extractSpotifyPlaylistId(playlistUrlOrId);
   if (!playlistId) return null;
@@ -269,50 +343,4 @@ export async function fetchSpotifyPlaylistPublic(playlistUrlOrId: string): Promi
   }
 
   return tracks.length > 0 ? { name: playlistTitle, tracks } : null;
-}
-
-/**
- * Parses batch text
- */
-export function parseBatchTracksText(rawText: string): CustomTrack[] {
-  const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
-  const tracks: CustomTrack[] = [];
-
-  lines.forEach((line, idx) => {
-    const cleanLine = line.replace(/^\d+[\.\s\-]+\s*/, '');
-
-    let year: number | undefined;
-    const yearMatch = cleanLine.match(/[\(\[\,\s](\d{4})[\)\]\s]?/);
-    if (yearMatch) {
-      year = parseInt(yearMatch[1], 10);
-    }
-
-    const textWithoutYear = cleanLine.replace(/[\(\[\,]\s*\d{4}\s*[\)\]]?/, '').trim();
-
-    let title = textWithoutYear;
-    let artist = 'Unknown Artist';
-
-    if (textWithoutYear.includes(' - ')) {
-      const parts = textWithoutYear.split(' - ');
-      title = parts[0].trim();
-      artist = parts.slice(1).join(' - ').trim();
-    } else if (textWithoutYear.includes(' by ')) {
-      const parts = textWithoutYear.split(' by ');
-      title = parts[0].trim();
-      artist = parts.slice(1).join(' by ').trim();
-    } else if (textWithoutYear.includes('|')) {
-      const parts = textWithoutYear.split('|');
-      title = parts[0].trim();
-      if (parts[1]) artist = parts[1].trim();
-    }
-
-    tracks.push({
-      id: `batch_${idx}_${Date.now()}`,
-      title,
-      artist,
-      year
-    });
-  });
-
-  return tracks;
 }
