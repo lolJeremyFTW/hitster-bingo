@@ -270,9 +270,9 @@ export async function fetchPlaylistTracksWithOAuth(
 
   log(`🎵 Playlist ID: ${playlistId} ophalen...`);
 
-  // Get playlist metadata
+  // Get playlist metadata (omit fields filter to ensure clean response)
   const metaRes = await fetch(
-    `https://api.spotify.com/v1/playlists/${playlistId}?fields=name,description,tracks.total`,
+    `https://api.spotify.com/v1/playlists/${playlistId}`,
     { headers: { Authorization: `Bearer ${accessToken}` } }
   );
 
@@ -291,12 +291,12 @@ export async function fetchPlaylistTracksWithOAuth(
 
     if (metaRes.status === 404) {
       log(`❌ Playlist niet gevonden (status 404).`);
-      throw new Error('Playlist niet gevonden (404). Controleer of de playlist bestaat en niet verwijderd is.');
+      throw new Error('Playlist niet gevonden (404). Controleer of de playlist bestaat en openbaar is.');
     }
 
     if (metaRes.status === 403) {
       log(`❌ Geen toegang tot playlist (status 403).`);
-      throw new Error('Geen toegang (403). Als de playlist privé is, zorg dat je ingelogd bent met het Spotify account dat eigenaar is.');
+      throw new Error('Geen toegang (403). Zorg dat je ingelogd bent met het Spotify account dat eigenaar is.');
     }
 
     const errText = await metaRes.text().catch(() => '');
@@ -306,17 +306,20 @@ export async function fetchPlaylistTracksWithOAuth(
 
   const meta = await metaRes.json();
   const playlistName = meta.name || 'Spotify Playlist';
-  const totalTracks = meta.tracks?.total || 0;
+  const totalTracks = meta.tracks?.total || meta.tracks?.items?.length || 0;
 
-  log(`🎶 "${playlistName}" — ${totalTracks} nummers gevonden!`);
+  log(`🎶 "${playlistName}" — ${totalTracks} nummers gevonden! Ophalen...`);
 
   // Paginate through ALL tracks
   const allTracks: import('../types/hitster').CustomTrack[] = [];
   let offset = 0;
   const limit = 100;
 
-  while (offset < totalTracks) {
-    const url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=${limit}&offset=${offset}&fields=items(track(id,name,artists(name),album(name,release_date),preview_url,external_urls))`;
+  // Fallback if totalTracks is 0 but playlist exists
+  const maxIterations = totalTracks > 0 ? Math.ceil(totalTracks / limit) : 20;
+
+  for (let i = 0; i < maxIterations; i++) {
+    const url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=${limit}&offset=${offset}`;
 
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${accessToken}` },
