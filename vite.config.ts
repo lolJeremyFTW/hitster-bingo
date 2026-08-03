@@ -356,4 +356,12 @@ export default defineConfig({
     tailwindcss(),
     spotifyApiPlugin()
   ],
+  server: {
+    // Expliciet 127.0.0.1: Spotify accepteert "localhost" niet als redirect URI,
+    // alleen de loopback-IP's. Zo opent de dev-server meteen op het adres dat
+    // ook in het Spotify dashboard staat.
+    host: '127.0.0.1',
+    port: 5173,
+    strictPort: true,
+  },
 });

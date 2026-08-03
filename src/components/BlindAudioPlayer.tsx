@@ -1,58 +1,102 @@
-import React, { useState, useRef } from 'react';
-import { Play, Pause, Eye, Shuffle, Disc, HelpCircle, Sparkles, Calendar, User, Music2, EyeOff } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Play, Pause, Eye, Shuffle, Disc, HelpCircle, Sparkles, Calendar, User, Music2, EyeOff, AlertTriangle, Loader2 } from 'lucide-react';
 import type { CustomTrack, Language } from '../types/hitster';
 import { soundEffects } from '../utils/soundEffects';
+import { spotifyPlayer, type PlayerStatus } from '../utils/spotifyPlayer';
+import { getStoredClientId, logoutSpotify, initiateSpotifyLogin } from '../utils/spotifyAuth';
 
 interface BlindAudioPlayerProps {
   tracks: CustomTrack[];
   language: Language;
+  /** Lengte van het fragment in seconden */
+  snippetSeconds?: number;
 }
 
 export const BlindAudioPlayer: React.FC<BlindAudioPlayerProps> = ({
   tracks,
-  language
+  language,
+  snippetSeconds = 25
 }) => {
   const [currentTrackIndex, setCurrentTrackIndex] = useState<number | null>(null);
   const [isRevealed, setIsRevealed] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [playedCount, setPlayedCount] = useState(0);
+  const [secondsLeft, setSecondsLeft] = useState(snippetSeconds);
+  const [playerStatus, setPlayerStatus] = useState<PlayerStatus>('idle');
+  const [statusDetail, setStatusDetail] = useState<string | null>(null);
+  const [startFromMiddle, setStartFromMiddle] = useState(false);
 
+  // Fallback voor tracks die (nog) een 30s preview hebben — zeldzaam sinds
+  // Spotify die in Development Mode heeft uitgezet, maar gratis en handig.
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  const isNl = language === 'nl';
   const currentTrack = currentTrackIndex !== null ? tracks[currentTrackIndex] : null;
+  const canStream = !!currentTrack?.spotifyUri;
+
+  useEffect(() => {
+    spotifyPlayer.setEvents({
+      onStatus: (status, detail) => {
+        setPlayerStatus(status);
+        setStatusDetail(detail ?? null);
+      },
+      onTick: (left) => setSecondsLeft(left),
+      onSnippetEnd: () => {
+        setIsPlaying(false);
+        setSecondsLeft(snippetSeconds);
+      },
+    });
+  }, [snippetSeconds]);
+
+  // Speler netjes loskoppelen als de component verdwijnt, anders blijft er een
+  // spookapparaat bij Spotify achter waar playback naartoe geroute kan worden.
+  useEffect(() => {
+    return () => {
+      spotifyPlayer.disconnect();
+    };
+  }, []);
+
+  const stopEverything = useCallback(() => {
+    spotifyPlayer.pause();
+    audioRef.current?.pause();
+    setIsPlaying(false);
+    setSecondsLeft(snippetSeconds);
+  }, [snippetSeconds]);
 
   const handleDrawSecretTrack = () => {
     if (tracks.length === 0) return;
 
-    if (audioRef.current) {
-      audioRef.current.pause();
-    }
+    stopEverything();
 
     const randomIndex = Math.floor(Math.random() * tracks.length);
     setCurrentTrackIndex(randomIndex);
     setIsRevealed(false);
-    setIsPlaying(false);
     setPlayedCount(prev => prev + 1);
 
     soundEffects.playSpinSelected();
   };
 
-  const togglePlayAudio = () => {
+  const togglePlayAudio = async () => {
     if (!currentTrack) return;
 
-    if (audioRef.current) {
-      if (isPlaying) {
-        audioRef.current.pause();
-        setIsPlaying(false);
-      } else {
-        audioRef.current.play().then(() => {
-          setIsPlaying(true);
-        }).catch(() => {
-          setIsPlaying(true);
-        });
-      }
-    } else {
-      setIsPlaying(!isPlaying);
+    if (isPlaying) {
+      stopEverything();
+      return;
+    }
+
+    if (currentTrack.spotifyUri) {
+      // Vanaf het midden beginnen maakt raden lastiger — intro's zijn vaak
+      // herkenbaarder dan het nummer zelf. Ruwe schatting: 3,5 min gemiddeld.
+      const startAt = startFromMiddle ? 60_000 : 0;
+      setIsPlaying(true);
+      setSecondsLeft(snippetSeconds);
+      await spotifyPlayer.playSnippet(currentTrack.spotifyUri, snippetSeconds, startAt);
+      return;
+    }
+
+    if (currentTrack.audioPreviewUrl && audioRef.current) {
+      audioRef.current.currentTime = 0;
+      audioRef.current.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
     }
   };
 
@@ -61,7 +105,83 @@ export const BlindAudioPlayer: React.FC<BlindAudioPlayerProps> = ({
     soundEffects.playBingoVictory();
   };
 
-  const isNl = language === 'nl';
+  /** Oude sessie weggooien en opnieuw autoriseren, nu mét de afspeel-scopes */
+  const handleReauth = async () => {
+    const clientId = getStoredClientId();
+    if (!clientId) return;
+    logoutSpotify();
+    try {
+      await initiateSpotifyLogin(clientId);
+    } catch (err: any) {
+      setStatusDetail(err.message);
+    }
+  };
+
+  const progressPct = ((snippetSeconds - secondsLeft) / snippetSeconds) * 100;
+
+  const renderPlayerWarning = () => {
+    // Meest voorkomende oorzaak na een scope-uitbreiding: een geldig maar te
+    // oud token. Direct oplosbaar, dus een knop erbij i.p.v. alleen uitleg.
+    if (playerStatus === 'scope-error') {
+      return (
+        <div className="flex items-start gap-2 text-left bg-amber-500/10 border border-amber-500/40 rounded-xl p-3">
+          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+          <div className="space-y-2">
+            <p className="text-[11px] text-amber-200 leading-relaxed">
+              {isNl
+                ? 'Je Spotify-sessie is van vóór de afspeelfunctie en mist de rechten om muziek te starten. Één keer opnieuw inloggen lost dit op.'
+                : 'Your Spotify session predates the playback feature and lacks the required permissions. Logging in once more fixes this.'}
+            </p>
+            <button
+              onClick={handleReauth}
+              className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 text-white font-bold text-[11px] uppercase tracking-wide"
+            >
+              {isNl ? 'Opnieuw inloggen bij Spotify' : 'Re-login with Spotify'}
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (playerStatus === 'no-premium') {
+      return (
+        <div className="flex items-start gap-2 text-left bg-amber-500/10 border border-amber-500/40 rounded-xl p-3">
+          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+          <p className="text-[11px] text-amber-200 leading-relaxed">
+            {isNl
+              ? 'Spotify Premium is vereist om hele nummers in de browser af te spelen. Zonder Premium blijft de speler stil.'
+              : 'Spotify Premium is required to stream full tracks in the browser.'}
+          </p>
+        </div>
+      );
+    }
+
+    if (playerStatus === 'auth-error' || playerStatus === 'error') {
+      return (
+        <div className="flex items-start gap-2 text-left bg-red-500/10 border border-red-500/40 rounded-xl p-3">
+          <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+          <p className="text-[11px] text-red-200 leading-relaxed">
+            {statusDetail || (isNl ? 'Speler niet beschikbaar.' : 'Player unavailable.')}
+          </p>
+        </div>
+      );
+    }
+
+    if (currentTrack && !canStream && !currentTrack.audioPreviewUrl) {
+      return (
+        <div className="flex items-start gap-2 text-left bg-slate-800/60 border border-slate-700 rounded-xl p-3">
+          <AlertTriangle className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+          <p className="text-[11px] text-slate-300 leading-relaxed">
+            {isNl
+              ? 'Dit nummer heeft geen Spotify-koppeling. Importeer de playlist opnieuw via "Login met Spotify" om te kunnen afspelen.'
+              : 'This track has no Spotify link. Re-import the playlist via Spotify login to enable playback.'}
+          </p>
+        </div>
+      );
+    }
+
+    return null;
+  };
 
   return (
     <div className="bg-slate-900/90 border border-purple-500/30 rounded-2xl p-4 sm:p-5 shadow-xl text-center backdrop-blur-md relative overflow-hidden">
@@ -82,8 +202,8 @@ export const BlindAudioPlayer: React.FC<BlindAudioPlayerProps> = ({
           <Disc className="w-10 h-10 text-purple-400 mx-auto mb-2 animate-spin-slow" />
           <p className="text-xs text-slate-300 mb-3 font-medium">
             {isNl
-              ? 'Trek een blinde kaart uit je afspeellijst om de muziek af te spelen zonder de titel of het jaar te zien!'
-              : 'Draw a secret card to play music without revealing the song name or release year!'}
+              ? `Trek een blinde kaart uit je afspeellijst en luister ${snippetSeconds} seconden zonder de titel of het jaar te zien!`
+              : `Draw a secret card and listen for ${snippetSeconds} seconds without seeing the title or year!`}
           </p>
           <button
             onClick={handleDrawSecretTrack}
@@ -102,15 +222,28 @@ export const BlindAudioPlayer: React.FC<BlindAudioPlayerProps> = ({
           }`}>
             {!isRevealed ? (
               <div className="flex flex-col items-center justify-center py-4">
-                <div className="w-16 h-16 rounded-full bg-purple-500/20 border border-purple-400/40 flex items-center justify-center mb-3 animate-pulse">
-                  <HelpCircle className="w-8 h-8 text-purple-300" />
+                <div className={`w-16 h-16 rounded-full bg-purple-500/20 border border-purple-400/40 flex items-center justify-center mb-3 ${isPlaying ? 'animate-pulse' : ''}`}>
+                  {isPlaying ? (
+                    <span className="text-2xl font-black text-purple-200 tabular-nums">{secondsLeft}</span>
+                  ) : (
+                    <HelpCircle className="w-8 h-8 text-purple-300" />
+                  )}
                 </div>
                 <div className="font-extrabold text-sm text-purple-200 tracking-wide">
-                  {isNl ? '❓ GEHEIM NUMMER AFSPELEN' : '❓ SECRET TRACK PLAYING'}
+                  {isNl ? '❓ GEHEIM NUMMER' : '❓ SECRET TRACK'}
                 </div>
                 <p className="text-[11px] text-slate-400 mt-1">
                   {isNl ? 'Luister goed! Raad het jaar, de artiest en vink je bingo kaart af.' : 'Listen closely! Guess the song and mark your bingo board.'}
                 </p>
+
+                {isPlaying && (
+                  <div className="w-full max-w-xs h-1.5 bg-slate-800 rounded-full mt-3 overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-purple-500 to-fuchsia-400 transition-[width] duration-1000 ease-linear"
+                      style={{ width: `${progressPct}%` }}
+                    />
+                  </div>
+                )}
               </div>
             ) : (
               <div className="text-left space-y-2.5 animate-fade-in">
@@ -150,7 +283,9 @@ export const BlindAudioPlayer: React.FC<BlindAudioPlayerProps> = ({
             )}
           </div>
 
-          {currentTrack.audioPreviewUrl && (
+          {renderPlayerWarning()}
+
+          {currentTrack.audioPreviewUrl && !canStream && (
             <audio
               ref={audioRef}
               src={currentTrack.audioPreviewUrl}
@@ -162,10 +297,23 @@ export const BlindAudioPlayer: React.FC<BlindAudioPlayerProps> = ({
           <div className="flex flex-wrap items-center justify-center gap-2">
             <button
               onClick={togglePlayAudio}
-              className="py-2.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-xs uppercase flex items-center gap-1.5 shadow-md shadow-purple-600/30"
+              disabled={playerStatus === 'loading' || (!canStream && !currentTrack.audioPreviewUrl)}
+              className="py-2.5 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-extrabold text-xs uppercase flex items-center gap-1.5 shadow-md shadow-purple-600/30"
             >
-              {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 fill-current" />}
-              <span>{isPlaying ? 'Pauze' : (isNl ? 'Speel Af' : 'Play')}</span>
+              {playerStatus === 'loading' ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : isPlaying ? (
+                <Pause className="w-4 h-4" />
+              ) : (
+                <Play className="w-4 h-4 fill-current" />
+              )}
+              <span>
+                {playerStatus === 'loading'
+                  ? (isNl ? 'Verbinden…' : 'Connecting…')
+                  : isPlaying
+                    ? (isNl ? 'Stop' : 'Stop')
+                    : (isNl ? `Speel ${snippetSeconds}s` : `Play ${snippetSeconds}s`)}
+              </span>
             </button>
 
             {!isRevealed ? (
@@ -186,6 +334,16 @@ export const BlindAudioPlayer: React.FC<BlindAudioPlayerProps> = ({
               </button>
             )}
           </div>
+
+          <label className="flex items-center justify-center gap-2 text-[11px] text-slate-400 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={startFromMiddle}
+              onChange={(e) => setStartFromMiddle(e.target.checked)}
+              className="accent-purple-500"
+            />
+            <span>{isNl ? 'Start midden in het nummer (moeilijker)' : 'Start mid-song (harder)'}</span>
+          </label>
         </div>
       )}
     </div>

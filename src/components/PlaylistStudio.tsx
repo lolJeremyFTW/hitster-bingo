@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Music, Plus, Trash2, Download, Upload, Save, Check, Disc, ExternalLink, Link as LinkIcon, FileText, Loader2, Sparkles, Layers, Terminal, LogIn, LogOut } from 'lucide-react';
 import type { CustomPlaylist, CustomTrack, Language } from '../types/hitster';
 import { getTranslation } from '../utils/translations';
 import { parseBatchTracksText, fetchSpotifyPlaylistPublic, resolveTrackUrlsWithOEmbed, autoEnrichTracks } from '../utils/spotifyImporter';
-import { initiateSpotifyLogin, isSpotifyAuthenticated, getStoredClientId, logoutSpotify, fetchPlaylistTracksWithOAuth } from '../utils/spotifyAuth';
+import { resolveOriginalYears } from '../utils/yearResolver';
+import { initiateSpotifyLogin, isSpotifyAuthenticated, getStoredClientId, logoutSpotify, fetchPlaylistTracksWithOAuth, getRedirectUri, isLocalhostOrigin, fetchSpotifyProfile, matchTracksToSpotify } from '../utils/spotifyAuth';
 
 interface PlaylistStudioProps {
   language: Language;
@@ -42,6 +43,9 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
 
   const [spotifyClientId, setSpotifyClientId] = useState(() => getStoredClientId());
   const [isLoggedIn, setIsLoggedIn] = useState(() => isSpotifyAuthenticated());
+  const [spotifyProfile, setSpotifyProfile] = useState<{ displayName: string; isPremium: boolean } | null>(null);
+  // MusicBrainz mag maar 1 request per seconde — bij grote lijsten wil je kunnen stoppen
+  const cancelEnrichRef = useRef(false);
 
   const [batchText, setBatchText] = useState('');
 
@@ -67,6 +71,20 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
     // Check auth status on mount
     setIsLoggedIn(isSpotifyAuthenticated());
   }, []);
+
+  // Premium bepaalt of de Web Playback SDK kan streamen — meteen laten zien,
+  // zodat je niet pas tijdens het spelen ontdekt dat er geen geluid komt.
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setSpotifyProfile(null);
+      return;
+    }
+    fetchSpotifyProfile().then(profile => {
+      if (profile) {
+        setSpotifyProfile({ displayName: profile.displayName, isPremium: profile.isPremium });
+      }
+    });
+  }, [isLoggedIn]);
 
   const handleSpotifyLogin = async () => {
     if (!spotifyClientId.trim()) {
@@ -274,17 +292,40 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
   const handleEnrichActivePlaylist = async () => {
     if (!activePlaylist || activePlaylist.tracks.length === 0) return;
     setIsImporting(true);
+    cancelEnrichRef.current = false;
     setCrawlerLogs(['✨ Jaartallen & artiesten automatisch aanvullen...']);
 
     try {
+      // Stap 1: ontbrekende titels/artiesten aanvullen (Spotify batch, dan iTunes)
       const enrichedTracks = await autoEnrichTracks(activePlaylist.tracks, (msg, count) => {
         setCrawlerLogs(prev => [...prev.slice(-30), msg]);
         if (count) setLiveTrackCount(count);
       });
 
+      // Stap 2: tracks zonder Spotify-URI koppelen, anders kan de speler ze niet
+      // afspelen (geldt voor geplakte lijsten en het standaard-deck)
+      const { tracks: linkedTracks } = await matchTracksToSpotify(
+        enrichedTracks,
+        (msg, done) => {
+          setCrawlerLogs(prev => [...prev.slice(-30), msg]);
+          if (done) setLiveTrackCount(done);
+        }
+      );
+
+      // Stap 3: jaartallen die van een compilatie of remaster komen corrigeren
+      // naar de oorspronkelijke release. Voor Hitster is dat het hele spel.
+      const { tracks: yearFixed, correctedCount } = await resolveOriginalYears(
+        linkedTracks,
+        (msg, done) => {
+          setCrawlerLogs(prev => [...prev.slice(-30), msg]);
+          if (done) setLiveTrackCount(done);
+        },
+        () => cancelEnrichRef.current
+      );
+
       const updatedPlaylist = {
         ...activePlaylist,
-        tracks: enrichedTracks
+        tracks: yearFixed
       };
 
       setActivePlaylist(updatedPlaylist);
@@ -293,8 +334,8 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
       }
       setImportedCountInfo(
         language === 'nl'
-          ? `✨ Afspeellijst aangevuld met jaartallen & artiesten!`
-          : `✨ Playlist enriched with release years & artists!`
+          ? `✨ Afspeellijst aangevuld — ${correctedCount} jaartallen gecorrigeerd naar de originele release!`
+          : `✨ Playlist enriched — ${correctedCount} years corrected to the original release!`
       );
     } catch (err: any) {
       setSpotifyError(`❌ ${err.message}`);
@@ -451,6 +492,22 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
                 <h3 className="text-xs font-extrabold uppercase tracking-wider text-green-300">
                   {isLoggedIn ? 'Spotify Verbonden ✓' : 'Spotify Koppelen'}
                 </h3>
+                {spotifyProfile && (
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                      spotifyProfile.isPremium
+                        ? 'bg-green-500/20 text-green-300 border-green-500/40'
+                        : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                    }`}
+                    title={
+                      spotifyProfile.isPremium
+                        ? 'Premium — hele nummers streamen werkt'
+                        : 'Zonder Premium kan de browser geen nummers afspelen'
+                    }
+                  >
+                    {spotifyProfile.isPremium ? 'Premium' : 'Geen Premium'}
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 {liveTrackCount > 0 && (
@@ -496,7 +553,8 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4" />
-                    <span>⚡ Snel (~100)</span>
+                    {/* Levert alleen titels/artiesten, geen Spotify-URI's — dus niet afspeelbaar */}
+                    <span>⚡ Snel (alleen lijst)</span>
                   </>
                 )}
               </button>
@@ -517,7 +575,7 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
                   ) : (
                     <>
                       <LogIn className="w-4 h-4" />
-                      <span>🎵 Alles (800+)</span>
+                      <span>🎵 Alles + afspeelbaar</span>
                     </>
                   )}
                 </button>
@@ -538,12 +596,26 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
               <div className="p-3 rounded-xl bg-slate-900 border border-green-500/20 space-y-2">
                 <p className="text-[11px] text-slate-400 leading-relaxed">
                   {isNl
-                    ? 'Voor alle 800+ nummers: maak een gratis app op developer.spotify.com → kopieer Client ID → stel Redirect URI in:'
-                    : 'For all 800+ tracks: create a free app at developer.spotify.com → copy Client ID → set Redirect URI:'}
+                    ? 'Voor alle nummers: maak een gratis app op developer.spotify.com → kopieer Client ID → zet deze Redirect URI erin (exact, zonder slash op het eind):'
+                    : 'For all tracks: create a free app at developer.spotify.com → copy Client ID → add this exact Redirect URI (no trailing slash):'}
                 </p>
                 <code className="block text-[10px] text-green-400 bg-slate-950 px-2 py-1 rounded font-mono select-all">
-                  {window.location.origin}
+                  {getRedirectUri()}
                 </code>
+
+                {isLocalhostOrigin() && (
+                  <p className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/40 rounded-lg px-2 py-1.5 leading-relaxed">
+                    {isNl
+                      ? `⚠️ Spotify accepteert "localhost" niet. Open de app op http://127.0.0.1:${window.location.port || '5173'} — anders mislukt het inloggen.`
+                      : `⚠️ Spotify does not accept "localhost". Open the app on http://127.0.0.1:${window.location.port || '5173'} instead.`}
+                  </p>
+                )}
+
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  {isNl
+                    ? 'Zet in het dashboard ook je eigen Spotify-account onder "User Management" — apps in Development Mode laten alleen toegevoegde accounts toe.'
+                    : 'Also add your own Spotify account under "User Management" — apps in Development Mode only allow listed accounts.'}
+                </p>
                 <input
                   type="text"
                   value={spotifyClientId}

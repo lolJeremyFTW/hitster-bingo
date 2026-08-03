@@ -33,7 +33,14 @@ export interface CustomTrack {
   year?: number;
   genre?: string;
   spotifyUrl?: string;
+  /** spotify:track:… — wat de Web Playback SDK nodig heeft om af te spelen */
+  spotifyUri?: string;
+  /** Legacy 30s preview. Leeg voor apps in Development Mode sinds 27-11-2024. */
   audioPreviewUrl?: string;
+  /** Bron van het jaartal, zodat je ziet of het origineel of een heruitgave is */
+  yearSource?: 'spotify' | 'musicbrainz' | 'manual';
+  /** Albumnaam — nodig om compilaties/remasters met een fout jaartal te herkennen */
+  albumName?: string;
 }
 
 export interface CustomPlaylist {
