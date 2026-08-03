@@ -19,19 +19,106 @@ export function extractSpotifyPlaylistId(urlOrId: string): string | null {
 }
 
 /**
- * Super-Smart Batch Text / Spotify Paste Parser:
- * Supports:
- * 1. Spotify Desktop/Web tabbed paste: "Title\tArtist\tAlbum\tRelease Date"
- * 2. Standard text lines: "Bohemian Rhapsody - Queen (1975)"
- * 3. Bullet/Numbered lines: "1. Africa - Toto 1982"
- * 4. Spotify Track URLs mixed in text
+ * Super-Resilient Spotify Embed & Public Importer:
+ * Explicitly fetches Spotify Embed iframe data (which contains up to 100 tracks per batch instead of 28)!
+ */
+export async function fetchSpotifyPlaylistPublic(playlistUrlOrId: string): Promise<SpotifyImportResult | null> {
+  const playlistId = extractSpotifyPlaylistId(playlistUrlOrId);
+  if (!playlistId) return null;
+
+  const embedUrl = `https://open.spotify.com/embed/playlist/${playlistId}`;
+  
+  // Try fetching direct embed and via proxies
+  const proxySources = [
+    embedUrl,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(embedUrl)}`,
+    `https://corsproxy.io/?${encodeURIComponent(embedUrl)}`,
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(embedUrl)}`
+  ];
+
+  let playlistTitle = 'Spotify Playlist';
+  let tracks: CustomTrack[] = [];
+
+  for (const targetUrl of proxySources) {
+    try {
+      const res = await fetch(targetUrl, {
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml',
+        }
+      });
+
+      if (!res.ok) continue;
+
+      const htmlText = await res.text();
+      if (!htmlText || htmlText.length < 500) continue;
+
+      // Extract JSON payload embedded inside Spotify iframe HTML
+      const jsonMatch = htmlText.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s) ||
+                        htmlText.match(/<script id="resource" type="application\/json">(.*?)<\/script>/s) ||
+                        htmlText.match(/<script id="initial-state" type="application\/json">(.*?)<\/script>/s);
+
+      if (jsonMatch && jsonMatch[1]) {
+        try {
+          const payload = JSON.parse(jsonMatch[1]);
+          const entity = payload?.props?.pageProps?.state?.data?.entity || payload?.entity || payload?.data?.entity;
+
+          if (entity) {
+            if (entity.name) playlistTitle = entity.name;
+
+            const rawItems = entity.trackList || entity.tracks?.items || [];
+            rawItems.forEach((item: any, idx: number) => {
+              const title = item.title || item.name || item.track?.name;
+              const artist = item.subtitle || (item.artists ? item.artists.map((a: any) => a.name).join(', ') : 'Unknown Artist');
+              const previewUrl = item.audioPreview?.url || item.preview_url || item.track?.preview_url;
+
+              let trackId = item.id || item.uid || `sp_${idx}_${Date.now()}`;
+              if (item.uri && item.uri.includes('spotify:track:')) {
+                trackId = item.uri.split('spotify:track:')[1];
+              }
+
+              let year: number | undefined;
+              if (item.releaseDate) {
+                const yMatch = item.releaseDate.match(/\d{4}/);
+                if (yMatch) year = parseInt(yMatch[0], 10);
+              }
+
+              if (title && title.toLowerCase() !== 'title') {
+                tracks.push({
+                  id: trackId,
+                  title: title.trim(),
+                  artist: artist ? artist.trim() : 'Unknown Artist',
+                  year,
+                  audioPreviewUrl: previewUrl || undefined,
+                  spotifyUrl: `https://open.spotify.com/track/${trackId}`
+                });
+              }
+            });
+
+            if (tracks.length > 0) {
+              console.log(`[Spotify Importer] Successfully loaded ${tracks.length} tracks from embed!`);
+              return { name: playlistTitle, tracks, totalTracksInPlaylist: tracks.length };
+            }
+          }
+        } catch (e) {
+          // JSON parse failed, try next proxy
+        }
+      }
+    } catch (e) {
+      // Fetch failed, try next proxy
+    }
+  }
+
+  return tracks.length > 0 ? { name: playlistTitle, tracks } : null;
+}
+
+/**
+ * Super-Smart Batch Text / Spotify Paste Parser
  */
 export function parseBatchTracksText(rawText: string): CustomTrack[] {
   const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
   const tracks: CustomTrack[] = [];
 
   lines.forEach((line, idx) => {
-    // Check if tab-separated (Direct Ctrl+C paste from Spotify Desktop or Web App!)
     if (line.includes('\t')) {
       const columns = line.split('\t').map(c => c.trim()).filter(Boolean);
       if (columns.length >= 2) {
@@ -39,7 +126,6 @@ export function parseBatchTracksText(rawText: string): CustomTrack[] {
         const artist = columns[1];
         let year: number | undefined;
 
-        // Find year in any column (e.g. "1975-10-31" or "1975")
         for (const col of columns) {
           const yMatch = col.match(/\b(19\d{2}|20[0-2]\d)\b/);
           if (yMatch) {
@@ -60,10 +146,8 @@ export function parseBatchTracksText(rawText: string): CustomTrack[] {
       }
     }
 
-    // Strip leading track numbers e.g. "1. ", "02 - "
     const cleanLine = line.replace(/^\d+[\.\s\-]+\s*/, '');
 
-    // Extract release year if present
     let year: number | undefined;
     const yearMatch = cleanLine.match(/[\(\[\,\s\•](\d{4})[\)\]\s]?/);
     if (yearMatch) {
@@ -259,88 +343,4 @@ export async function fetchAllTracksFromSpotifyAPI(
     console.error('Spotify API Fetch Error:', err);
     return null;
   }
-}
-
-export async function fetchSpotifyPlaylistPublic(playlistUrlOrId: string): Promise<SpotifyImportResult | null> {
-  const playlistId = extractSpotifyPlaylistId(playlistUrlOrId);
-  if (!playlistId) return null;
-
-  const embedUrl = `https://open.spotify.com/embed/playlist/${playlistId}`;
-  const proxySources = [
-    embedUrl,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(embedUrl)}`,
-    `https://corsproxy.io/?${encodeURIComponent(embedUrl)}`
-  ];
-
-  let playlistTitle = 'Spotify Playlist';
-  let tracks: CustomTrack[] = [];
-
-  for (const targetUrl of proxySources) {
-    try {
-      const res = await fetch(targetUrl, {
-        headers: {
-          'Accept': 'text/html,application/xhtml+xml,application/xml',
-        }
-      });
-
-      if (!res.ok) continue;
-
-      const htmlText = await res.text();
-      if (!htmlText || htmlText.length < 500) continue;
-
-      const jsonMatch = htmlText.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s) ||
-                        htmlText.match(/<script id="resource" type="application\/json">(.*?)<\/script>/s) ||
-                        htmlText.match(/<script id="initial-state" type="application\/json">(.*?)<\/script>/s);
-
-      if (jsonMatch && jsonMatch[1]) {
-        try {
-          const payload = JSON.parse(jsonMatch[1]);
-          const entity = payload?.props?.pageProps?.state?.data?.entity || payload?.entity || payload?.data?.entity;
-
-          if (entity) {
-            if (entity.name) playlistTitle = entity.name;
-
-            const rawItems = entity.trackList || entity.tracks?.items || [];
-            rawItems.forEach((item: any, idx: number) => {
-              const title = item.title || item.name || item.track?.name;
-              const artist = item.subtitle || (item.artists ? item.artists.map((a: any) => a.name).join(', ') : 'Unknown Artist');
-              const previewUrl = item.audioPreview?.url || item.preview_url || item.track?.preview_url;
-
-              let trackId = item.id || item.uid || `sp_${idx}_${Date.now()}`;
-              if (item.uri && item.uri.includes('spotify:track:')) {
-                trackId = item.uri.split('spotify:track:')[1];
-              }
-
-              let year: number | undefined;
-              if (item.releaseDate) {
-                const yMatch = item.releaseDate.match(/\d{4}/);
-                if (yMatch) year = parseInt(yMatch[0], 10);
-              }
-
-              if (title) {
-                tracks.push({
-                  id: trackId,
-                  title: title.trim(),
-                  artist: artist ? artist.trim() : 'Unknown Artist',
-                  year,
-                  audioPreviewUrl: previewUrl || undefined,
-                  spotifyUrl: `https://open.spotify.com/track/${trackId}`
-                });
-              }
-            });
-
-            if (tracks.length > 0) {
-              return { name: playlistTitle, tracks, totalTracksInPlaylist: tracks.length };
-            }
-          }
-        } catch {
-          // Continue
-        }
-      }
-    } catch {
-      // Continue
-    }
-  }
-
-  return tracks.length > 0 ? { name: playlistTitle, tracks } : null;
 }
