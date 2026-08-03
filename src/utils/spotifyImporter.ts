@@ -306,30 +306,93 @@ export function parseBatchTracksText(rawText: string): CustomTrack[] {
 }
 
 /**
- * Automatically resolves track titles & artists for Spotify track URLs using Spotify's public oEmbed API
+ * Automatically resolves track titles, artists, and release years for Spotify track URLs
  */
 export async function resolveTrackUrlsWithOEmbed(tracks: CustomTrack[]): Promise<CustomTrack[]> {
-  const resolvedTracks: CustomTrack[] = [];
+  const unresolvedTracks = tracks.filter(t => t.spotifyUrl && (t.artist === 'Spotify Link' || t.artist === 'Spotify Track' || t.artist === 'Unknown Artist'));
+  if (unresolvedTracks.length === 0) return tracks;
 
-  for (let i = 0; i < tracks.length; i += 15) {
-    const chunk = tracks.slice(i, i + 15);
+  // Try Spotify API batch resolving first (50 tracks per call) if OAuth token exists
+  try {
+    const { getValidAccessToken } = await import('./spotifyAuth');
+    const token = await getValidAccessToken();
+    if (token) {
+      const trackMap = new Map<string, { title: string; artist: string; year?: number; previewUrl?: string }>();
+      const trackIds = unresolvedTracks.map(t => t.id).filter(id => /^[a-zA-Z0-9]{22}$/.test(id));
+
+      for (let i = 0; i < trackIds.length; i += 50) {
+        const chunk = trackIds.slice(i, i + 50);
+        const res = await fetch(`https://api.spotify.com/v1/tracks?ids=${chunk.join(',')}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          (data.tracks || []).forEach((tObj: any) => {
+            if (tObj && tObj.id && tObj.name) {
+              let year: number | undefined;
+              if (tObj.album?.release_date) {
+                const yMatch = tObj.album.release_date.match(/\d{4}/);
+                if (yMatch) year = parseInt(yMatch[0], 10);
+              }
+              trackMap.set(tObj.id, {
+                title: tObj.name.trim(),
+                artist: tObj.artists ? tObj.artists.map((a: any) => a.name).join(', ') : 'Unknown Artist',
+                year,
+                previewUrl: tObj.preview_url || undefined
+              });
+            }
+          });
+        }
+      }
+
+      if (trackMap.size > 0) {
+        return tracks.map(t => {
+          const resolved = trackMap.get(t.id);
+          if (resolved) {
+            return {
+              ...t,
+              title: resolved.title,
+              artist: resolved.artist,
+              year: resolved.year || t.year,
+              audioPreviewUrl: resolved.previewUrl || t.audioPreviewUrl
+            };
+          }
+          return t;
+        });
+      }
+    }
+  } catch {
+    // Fallback to oEmbed below
+  }
+
+  // Fallback: oEmbed API resolving
+  const resolvedTracks: CustomTrack[] = [];
+  for (let i = 0; i < tracks.length; i += 10) {
+    const chunk = tracks.slice(i, i + 10);
     const promises = chunk.map(async (track) => {
       if (track.spotifyUrl && (track.artist === 'Spotify Link' || track.artist === 'Spotify Track' || track.artist === 'Unknown Artist')) {
-        try {
-          const oembedUrl = `https://open.spotify.com/oembed?url=${encodeURIComponent(track.spotifyUrl)}`;
-          const res = await fetch(oembedUrl);
-          if (res.ok) {
-            const data = await res.json();
-            if (data.title) {
-              return {
-                ...track,
-                title: data.title,
-                artist: data.author_name || 'Spotify Artist',
-              };
+        const targetUrl = `https://open.spotify.com/oembed?url=${encodeURIComponent(track.spotifyUrl)}`;
+        const sources = [
+          targetUrl,
+          `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`
+        ];
+
+        for (const src of sources) {
+          try {
+            const res = await fetch(src);
+            if (res.ok) {
+              const data = await res.json();
+              if (data.title) {
+                return {
+                  ...track,
+                  title: data.title,
+                  artist: data.author_name || 'Spotify Artist',
+                };
+              }
             }
+          } catch {
+            // try next
           }
-        } catch {
-          // Fallback to original
         }
       }
       return track;
