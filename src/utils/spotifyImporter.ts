@@ -306,103 +306,131 @@ export function parseBatchTracksText(rawText: string): CustomTrack[] {
 }
 
 /**
- * Automatically resolves track titles, artists, and release years for Spotify track URLs
+ * Automatically enriches tracks with release years and real artist names using Spotify API batch lookup or iTunes API fallback.
  */
-export async function resolveTrackUrlsWithOEmbed(tracks: CustomTrack[]): Promise<CustomTrack[]> {
-  const unresolvedTracks = tracks.filter(t => t.spotifyUrl && (t.artist === 'Spotify Link' || t.artist === 'Spotify Track' || t.artist === 'Unknown Artist'));
-  if (unresolvedTracks.length === 0) return tracks;
+export async function autoEnrichTracks(
+  tracks: CustomTrack[],
+  onProgress?: (msg: string, count: number) => void
+): Promise<CustomTrack[]> {
+  if (!tracks || tracks.length === 0) return tracks;
 
-  // Try Spotify API batch resolving first (50 tracks per call) if OAuth token exists
+  const needsEnrichment = tracks.filter(t => !t.year || !t.artist || t.artist.includes('Spotify') || t.artist === 'Unknown Artist');
+  if (needsEnrichment.length === 0) return tracks;
+
+  // 1. Try Spotify Web API batch lookup (50 tracks/request) if token exists
   try {
     const { getValidAccessToken } = await import('./spotifyAuth');
     const token = await getValidAccessToken();
+
     if (token) {
       const trackMap = new Map<string, { title: string; artist: string; year?: number; previewUrl?: string }>();
-      const trackIds = unresolvedTracks.map(t => t.id).filter(id => /^[a-zA-Z0-9]{22}$/.test(id));
+      const trackIds = tracks.map(t => t.id).filter(id => /^[a-zA-Z0-9]{22}$/.test(id));
 
-      for (let i = 0; i < trackIds.length; i += 50) {
-        const chunk = trackIds.slice(i, i + 50);
-        const res = await fetch(`https://api.spotify.com/v1/tracks?ids=${chunk.join(',')}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          (data.tracks || []).forEach((tObj: any) => {
-            if (tObj && tObj.id && tObj.name) {
-              let year: number | undefined;
-              if (tObj.album?.release_date) {
-                const yMatch = tObj.album.release_date.match(/\d{4}/);
-                if (yMatch) year = parseInt(yMatch[0], 10);
-              }
-              trackMap.set(tObj.id, {
-                title: tObj.name.trim(),
-                artist: tObj.artists ? tObj.artists.map((a: any) => a.name).join(', ') : 'Unknown Artist',
-                year,
-                previewUrl: tObj.preview_url || undefined
-              });
-            }
+      if (trackIds.length > 0) {
+        for (let i = 0; i < trackIds.length; i += 50) {
+          const chunk = trackIds.slice(i, i + 50);
+          if (onProgress) onProgress(`🔍 Spotify API Jaartallen ophalen (${Math.min(i + 50, trackIds.length)}/${trackIds.length})...`, i);
+
+          const res = await fetch(`https://api.spotify.com/v1/tracks?ids=${chunk.join(',')}`, {
+            headers: { Authorization: `Bearer ${token}` }
           });
+
+          if (res.ok) {
+            const data = await res.json();
+            (data.tracks || []).forEach((tObj: any) => {
+              if (tObj && tObj.id && tObj.name) {
+                let year: number | undefined;
+                if (tObj.album?.release_date) {
+                  const yMatch = tObj.album.release_date.match(/\d{4}/);
+                  if (yMatch) year = parseInt(yMatch[0], 10);
+                }
+                trackMap.set(tObj.id, {
+                  title: tObj.name.trim(),
+                  artist: tObj.artists ? tObj.artists.map((a: any) => a.name).join(', ') : 'Unknown Artist',
+                  year,
+                  previewUrl: tObj.preview_url || undefined
+                });
+              }
+            });
+          }
         }
       }
 
       if (trackMap.size > 0) {
-        return tracks.map(t => {
-          const resolved = trackMap.get(t.id);
-          if (resolved) {
+        const enriched = tracks.map(t => {
+          const resObj = trackMap.get(t.id);
+          if (resObj) {
             return {
               ...t,
-              title: resolved.title,
-              artist: resolved.artist,
-              year: resolved.year || t.year,
-              audioPreviewUrl: resolved.previewUrl || t.audioPreviewUrl
+              title: resObj.title || t.title,
+              artist: resObj.artist && !resObj.artist.includes('Unknown') ? resObj.artist : t.artist,
+              year: resObj.year || t.year,
+              audioPreviewUrl: resObj.previewUrl || t.audioPreviewUrl
             };
           }
           return t;
         });
+        if (onProgress) onProgress(`✅ ${trackMap.size} nummers verrijkt met jaartallen & artiesten!`, trackMap.size);
+        return enriched;
       }
     }
-  } catch {
-    // Fallback to oEmbed below
+  } catch (e) {
+    console.warn('[AutoEnrich] Spotify API batch enrichment skipped:', e);
   }
 
-  // Fallback: oEmbed API resolving
-  const resolvedTracks: CustomTrack[] = [];
-  for (let i = 0; i < tracks.length; i += 10) {
-    const chunk = tracks.slice(i, i + 10);
-    const promises = chunk.map(async (track) => {
-      if (track.spotifyUrl && (track.artist === 'Spotify Link' || track.artist === 'Spotify Track' || track.artist === 'Unknown Artist')) {
-        const targetUrl = `https://open.spotify.com/oembed?url=${encodeURIComponent(track.spotifyUrl)}`;
-        const sources = [
-          targetUrl,
-          `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`
-        ];
+  // 2. Fallback: iTunes Search API (Free, no credentials needed, 100% public!)
+  if (onProgress) onProgress('🍎 iTunes API raadplegen voor jaartallen & artiesten...', 0);
+  const enrichedTracks = [...tracks];
+  let enrichedCount = 0;
 
-        for (const src of sources) {
-          try {
-            const res = await fetch(src);
-            if (res.ok) {
-              const data = await res.json();
-              if (data.title) {
-                return {
-                  ...track,
-                  title: data.title,
-                  artist: data.author_name || 'Spotify Artist',
-                };
+  for (let i = 0; i < enrichedTracks.length; i += 10) {
+    const chunk = enrichedTracks.slice(i, i + 10);
+    const promises = chunk.map(async (t) => {
+      if (!t.year || !t.artist || t.artist.includes('Spotify') || t.artist === 'Unknown Artist') {
+        try {
+          const cleanArtist = (t.artist && !t.artist.includes('Spotify') && t.artist !== 'Unknown Artist') ? t.artist : '';
+          const searchTerm = `${t.title} ${cleanArtist}`.trim();
+          const res = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(searchTerm)}&media=music&limit=1`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.results && data.results.length > 0) {
+              const item = data.results[0];
+              let year: number | undefined;
+              if (item.releaseDate) {
+                const yMatch = String(item.releaseDate).match(/\d{4}/);
+                if (yMatch) year = parseInt(yMatch[0], 10);
               }
+              enrichedCount++;
+              return {
+                ...t,
+                artist: (t.artist.includes('Spotify') || t.artist === 'Unknown Artist') ? (item.artistName || t.artist) : t.artist,
+                year: year || t.year,
+                audioPreviewUrl: t.audioPreviewUrl || item.previewUrl || undefined
+              };
             }
-          } catch {
-            // try next
           }
+        } catch {
+          // ignore
         }
       }
-      return track;
+      return t;
     });
 
     const results = await Promise.all(promises);
-    resolvedTracks.push(...results);
+    for (let j = 0; j < results.length; j++) {
+      enrichedTracks[i + j] = results[j];
+    }
   }
 
-  return resolvedTracks;
+  if (onProgress) onProgress(`🎉 ${enrichedCount} nummers aangevuld met jaartal!`, enrichedCount);
+  return enrichedTracks;
+}
+
+/**
+ * Automatically resolves track titles, artists, and release years for Spotify track URLs
+ */
+export async function resolveTrackUrlsWithOEmbed(tracks: CustomTrack[]): Promise<CustomTrack[]> {
+  return autoEnrichTracks(tracks);
 }
 
 export async function scrapeSpotifyPlaylistWithLiveLogs(

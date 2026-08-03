@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Music, Plus, Trash2, Download, Upload, Save, Check, Disc, ExternalLink, Link as LinkIcon, FileText, Loader2, Sparkles, Layers, Terminal, LogIn, LogOut } from 'lucide-react';
 import type { CustomPlaylist, CustomTrack, Language } from '../types/hitster';
 import { getTranslation } from '../utils/translations';
-import { parseBatchTracksText, fetchSpotifyPlaylistPublic, resolveTrackUrlsWithOEmbed } from '../utils/spotifyImporter';
+import { parseBatchTracksText, fetchSpotifyPlaylistPublic, resolveTrackUrlsWithOEmbed, autoEnrichTracks } from '../utils/spotifyImporter';
 import { initiateSpotifyLogin, isSpotifyAuthenticated, getStoredClientId, logoutSpotify, fetchPlaylistTracksWithOAuth } from '../utils/spotifyAuth';
 
 interface PlaylistStudioProps {
@@ -256,7 +256,51 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
       }));
       setBatchText('');
       setActiveTab('single');
+
+      // Auto-enrich in background for years & artist names
+      setIsImporting(true);
+      setCrawlerLogs(prev => [...prev, '✨ Jaartallen & artiesten automatisch ophalen...']);
+      const enriched = await autoEnrichTracks(parsedTracks, (msg) => {
+        setCrawlerLogs(prev => [...prev.slice(-30), msg]);
+      });
+      setActivePlaylist(prev => ({
+        ...prev,
+        tracks: prev.tracks.map(t => enriched.find(e => e.id === t.id) || t)
+      }));
+      setIsImporting(false);
     }
+  };
+
+  const handleEnrichActivePlaylist = async () => {
+    if (!activePlaylist || activePlaylist.tracks.length === 0) return;
+    setIsImporting(true);
+    setCrawlerLogs(['✨ Jaartallen & artiesten automatisch aanvullen...']);
+
+    try {
+      const enrichedTracks = await autoEnrichTracks(activePlaylist.tracks, (msg, count) => {
+        setCrawlerLogs(prev => [...prev.slice(-30), msg]);
+        if (count) setLiveTrackCount(count);
+      });
+
+      const updatedPlaylist = {
+        ...activePlaylist,
+        tracks: enrichedTracks
+      };
+
+      setActivePlaylist(updatedPlaylist);
+      if (onSelectPlaylist) {
+        onSelectPlaylist(updatedPlaylist);
+      }
+      setImportedCountInfo(
+        language === 'nl'
+          ? `✨ Afspeellijst aangevuld met jaartallen & artiesten!`
+          : `✨ Playlist enriched with release years & artists!`
+      );
+    } catch (err: any) {
+      setSpotifyError(`❌ ${err.message}`);
+    }
+
+    setIsImporting(false);
   };
 
   const handleAddSingleTrack = (e: React.FormEvent) => {
@@ -633,8 +677,21 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
 
         {/* Track List */}
         <div className="max-h-52 overflow-y-auto pr-1 space-y-2 mb-5">
-          <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-1 flex items-center justify-between">
-            <span>Nummers in afspeellijst ({activePlaylist.tracks.length}):</span>
+          <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-1 flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
+              <span>Nummers ({activePlaylist.tracks.length}):</span>
+              {activePlaylist.tracks.some(t => !t.year || t.artist.includes('Spotify') || t.artist === 'Unknown Artist') && (
+                <button
+                  type="button"
+                  onClick={handleEnrichActivePlaylist}
+                  disabled={isImporting}
+                  className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 text-[10px] font-extrabold flex items-center gap-1 transition-colors animate-pulse"
+                >
+                  <Sparkles className="w-3 h-3 text-amber-400" />
+                  <span>✨ Jaartallen & Artiesten Aanvullen</span>
+                </button>
+              )}
+            </div>
             {activePlaylist.tracks.length >= 100 && (
               <span className="text-purple-400 font-extrabold">⚡ Grote Deck ({activePlaylist.tracks.length} nummers)</span>
             )}
