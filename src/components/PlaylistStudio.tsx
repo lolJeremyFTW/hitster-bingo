@@ -147,6 +147,84 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
     setIsImporting(false);
   };
 
+  const handleQuickImportEmbed = async () => {
+    if (!spotifyUrl.trim()) return;
+
+    setIsImporting(true);
+    setSpotifyError(null);
+    setImportedCountInfo(null);
+    setCrawlerLogs(['🔓 Snel importeren zonder login (max ~100 nummers)...']);
+    setLiveTrackCount(0);
+
+    try {
+      const res = await fetch('/api/spotify-embed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: spotifyUrl })
+      });
+
+      if (!res.ok || !res.body) throw new Error(`Server status ${res.status}`);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let finalTracks: CustomTrack[] = [];
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const payload = JSON.parse(line.slice(6));
+              if (payload.message) {
+                setCrawlerLogs(prev => [...prev.slice(-30), payload.message]);
+                setLiveTrackCount(payload.count || 0);
+              }
+              if (payload.tracks && payload.tracks.length > 0) {
+                finalTracks = payload.tracks;
+              }
+              if (payload.isDone && finalTracks.length > 0) {
+                const newPlaylist: CustomPlaylist = {
+                  id: `embed_${Date.now()}`,
+                  name: 'Spotify Playlist',
+                  description: `Embed Import (${finalTracks.length} nummers, zonder login)`,
+                  createdAt: new Date().toISOString(),
+                  tracks: finalTracks
+                };
+                setActivePlaylist(newPlaylist);
+                setSpotifyUrlInput('');
+                setActiveTab('single');
+                setImportedCountInfo(
+                  language === 'nl'
+                    ? `🎉 ${finalTracks.length} nummers geïmporteerd (zonder login)!`
+                    : `🎉 ${finalTracks.length} tracks imported (no login)!`
+                );
+              }
+            } catch {
+              // continue
+            }
+          }
+        }
+      }
+
+      if (finalTracks.length === 0) {
+        setSpotifyError(
+          language === 'nl'
+            ? '❌ Geen nummers gevonden. Is de playlist openbaar? Probeer OAuth login.'
+            : '❌ No tracks found. Is the playlist public? Try OAuth login.'
+        );
+      }
+    } catch (err: any) {
+      setSpotifyError(`❌ ${err.message || 'Import mislukt'}`);
+    }
+
+    setIsImporting(false);
+  };
+
   const handleImportBatchText = (e: React.FormEvent) => {
     e.preventDefault();
     if (!batchText.trim()) return;
@@ -329,77 +407,96 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
               </div>
             </div>
 
-            {/* Step 1: Login (if not logged in) */}
-            {!isLoggedIn && (
-              <div className="space-y-3">
-                {/* Client ID Input */}
-                <div className="p-3 rounded-xl bg-slate-900 border border-green-500/20 space-y-2">
-                  <p className="text-[11px] text-slate-300 leading-relaxed">
-                    {isNl
-                      ? '1. Maak een gratis app op developer.spotify.com/dashboard → Kopieer de Client ID → Stel als Redirect URI in:'
-                      : '1. Create a free app at developer.spotify.com/dashboard → Copy the Client ID → Set as Redirect URI:'}
-                  </p>
-                  <code className="block text-[10px] text-green-400 bg-slate-950 px-2 py-1 rounded font-mono select-all">
-                    {window.location.origin}/
-                  </code>
-                  <input
-                    type="text"
-                    value={spotifyClientId}
-                    onChange={(e) => setSpotifyClientId(e.target.value)}
-                    placeholder="Spotify Client ID"
-                    className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-green-500/40 text-xs font-mono text-green-300 focus:outline-none focus:border-green-400 placeholder-slate-600"
-                  />
-                  <a
-                    href="https://developer.spotify.com/dashboard"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-[11px] text-green-400 hover:text-green-300 font-bold"
-                  >
-                    <ExternalLink className="w-3 h-3" />
-                    <span>Open Spotify Developer Dashboard →</span>
-                  </a>
-                </div>
+            {/* Playlist URL — always visible */}
+            <input
+              type="url"
+              value={spotifyUrl}
+              onChange={(e) => setSpotifyUrlInput(e.target.value)}
+              placeholder="https://open.spotify.com/playlist/5zSKBda7QTnWMHecVs20E3"
+              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-green-500 font-mono"
+            />
 
-                <button
-                  type="button"
-                  onClick={handleSpotifyLogin}
-                  className="w-full py-3 px-4 rounded-xl bg-green-600 text-white font-extrabold text-sm uppercase tracking-wider hover:bg-green-500 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-green-600/20"
-                >
-                  <LogIn className="w-5 h-5" />
-                  <span>🎵 Login met Spotify</span>
-                </button>
-              </div>
-            )}
+            {/* Import buttons */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {/* Quick Import — no login needed */}
+              <button
+                type="button"
+                onClick={handleQuickImportEmbed}
+                disabled={isImporting || !spotifyUrl.trim()}
+                className="py-2.5 px-4 rounded-xl bg-amber-600 text-white font-extrabold text-xs uppercase tracking-wider hover:bg-amber-500 disabled:opacity-40 transition-colors flex items-center justify-center gap-1.5 shadow-lg shadow-amber-600/20"
+              >
+                {isImporting && !isLoggedIn ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Laden... ({liveTrackCount})</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4" />
+                    <span>⚡ Snel (~100)</span>
+                  </>
+                )}
+              </button>
 
-            {/* Step 2: Import playlist (when logged in) */}
-            {isLoggedIn && (
-              <div className="space-y-3">
-                <input
-                  type="url"
-                  value={spotifyUrl}
-                  onChange={(e) => setSpotifyUrlInput(e.target.value)}
-                  placeholder="https://open.spotify.com/playlist/5zSKBda7QTnWMHecVs20E3"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-green-500 font-mono"
-                />
-
+              {/* Full Import — OAuth */}
+              {isLoggedIn ? (
                 <button
                   type="button"
                   onClick={handleImportWithOAuth}
                   disabled={isImporting || !spotifyUrl.trim()}
-                  className="w-full py-3 px-4 rounded-xl bg-green-600 text-white font-extrabold text-sm uppercase tracking-wider hover:bg-green-500 disabled:opacity-40 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-green-600/20"
+                  className="py-2.5 px-4 rounded-xl bg-green-600 text-white font-extrabold text-xs uppercase tracking-wider hover:bg-green-500 disabled:opacity-40 transition-colors flex items-center justify-center gap-1.5 shadow-lg shadow-green-600/20"
                 >
                   {isImporting ? (
                     <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      <span>Nummers Ophalen... ({liveTrackCount})</span>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Ophalen... ({liveTrackCount})</span>
                     </>
                   ) : (
                     <>
-                      <Sparkles className="w-5 h-5" />
-                      <span>🎵 Alle Nummers Importeren</span>
+                      <LogIn className="w-4 h-4" />
+                      <span>🎵 Alles (800+)</span>
                     </>
                   )}
                 </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleSpotifyLogin}
+                  className="py-2.5 px-4 rounded-xl bg-green-600/80 text-white font-extrabold text-xs uppercase tracking-wider hover:bg-green-500 transition-colors flex items-center justify-center gap-1.5 shadow-lg shadow-green-600/20"
+                >
+                  <LogIn className="w-4 h-4" />
+                  <span>🔑 Login (800+)</span>
+                </button>
+              )}
+            </div>
+
+            {/* OAuth Setup — collapsible, only if not logged in */}
+            {!isLoggedIn && (
+              <div className="p-3 rounded-xl bg-slate-900 border border-green-500/20 space-y-2">
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  {isNl
+                    ? 'Voor alle 800+ nummers: maak een gratis app op developer.spotify.com → kopieer Client ID → stel Redirect URI in:'
+                    : 'For all 800+ tracks: create a free app at developer.spotify.com → copy Client ID → set Redirect URI:'}
+                </p>
+                <code className="block text-[10px] text-green-400 bg-slate-950 px-2 py-1 rounded font-mono select-all">
+                  {window.location.origin}/
+                </code>
+                <input
+                  type="text"
+                  value={spotifyClientId}
+                  onChange={(e) => setSpotifyClientId(e.target.value)}
+                  placeholder="Spotify Client ID"
+                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-green-500/40 text-xs font-mono text-green-300 focus:outline-none focus:border-green-400 placeholder-slate-600"
+                />
+                <a
+                  href="https://developer.spotify.com/dashboard"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[11px] text-green-400 hover:text-green-300 font-bold"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  <span>Open Spotify Developer Dashboard →</span>
+                </a>
               </div>
             )}
 

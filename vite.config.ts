@@ -207,6 +207,144 @@ function spotifyApiPlugin() {
           res.end();
         }
       });
+
+      // Endpoint: Fetch tracks from Spotify embed page (NO credentials needed, ~100 tracks max)
+      server.middlewares.use('/api/spotify-embed', async (req: any, res: any) => {
+        if (req.method !== 'POST') { res.statusCode = 405; res.end('Method not allowed'); return; }
+
+        const body = await readBody(req);
+        const { url } = JSON.parse(body);
+
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+
+        const send = (message: string, count = 0, isDone = false, isError = false, tracks: any[] = []) => {
+          res.write(`data: ${JSON.stringify({ message, count, isDone, isError, tracks })}\n\n`);
+        };
+
+        try {
+          const match = url.match(/playlist[\/:]([ a-zA-Z0-9]{22})/);
+          const playlistId = match ? match[1] : url.trim();
+          if (!playlistId || playlistId.length < 10) {
+            send('❌ Ongeldige Spotify URL', 0, true, true);
+            res.end();
+            return;
+          }
+
+          send('🔓 Spotify embed pagina ophalen (geen login nodig)...');
+
+          // Fetch the embed page HTML server-side (no CORS issues)
+          const embedUrl = `https://open.spotify.com/embed/playlist/${playlistId}`;
+          const embedRes = await fetch(embedUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept': 'text/html,application/xhtml+xml',
+            }
+          });
+
+          if (!embedRes.ok) {
+            send(`❌ Spotify embed niet beschikbaar (${embedRes.status}). Is de playlist openbaar?`, 0, true, true);
+            res.end();
+            return;
+          }
+
+          const html = await embedRes.text();
+          send(`📄 Embed pagina ontvangen (${(html.length / 1024).toFixed(0)} KB), tracks extraheren...`);
+
+          // Extract JSON data from embedded script tags
+          const jsonPatterns = [
+            /<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s,
+            /<script id="resource" type="application\/json">(.*?)<\/script>/s,
+            /<script id="initial-state" type="application\/json">(.*?)<\/script>/s,
+          ];
+
+          let tracks: any[] = [];
+          let playlistName = 'Spotify Playlist';
+
+          for (const pattern of jsonPatterns) {
+            const match = html.match(pattern);
+            if (!match || !match[1]) continue;
+
+            try {
+              const payload = JSON.parse(match[1]);
+
+              // Recursively find track-like objects in the JSON tree
+              const extractTracks = (obj: any, depth = 0): void => {
+                if (!obj || typeof obj !== 'object' || depth > 15) return;
+
+                // Check for playlist name
+                if (obj.name && obj.type === 'playlist') {
+                  playlistName = obj.name;
+                }
+
+                // Check if this looks like a track
+                if (obj.name && (obj.artists || obj.subtitle || obj.type === 'track') && obj.type !== 'playlist') {
+                  const title = obj.name;
+                  let artist = 'Unknown Artist';
+                  if (Array.isArray(obj.artists)) {
+                    artist = obj.artists.map((a: any) => a.name || a).filter(Boolean).join(', ');
+                  } else if (obj.subtitle) {
+                    artist = obj.subtitle;
+                  } else if (obj.artists?.items) {
+                    artist = obj.artists.items.map((a: any) => a.profile?.name || a.name).filter(Boolean).join(', ');
+                  }
+
+                  let year: number | undefined;
+                  const relDate = obj.album?.release_date || obj.releaseDate || obj.album?.date;
+                  if (relDate) {
+                    const yMatch = String(relDate).match(/\d{4}/);
+                    if (yMatch) year = parseInt(yMatch[0], 10);
+                  }
+
+                  let trackId = obj.id || obj.uid;
+                  if (obj.uri?.includes('spotify:track:')) {
+                    trackId = obj.uri.split('spotify:track:')[1];
+                  }
+
+                  if (title && title.toLowerCase() !== 'title' && trackId) {
+                    // Deduplicate by id
+                    if (!tracks.some(t => t.id === trackId)) {
+                      tracks.push({
+                        id: trackId,
+                        title: title.trim(),
+                        artist: artist.trim(),
+                        year,
+                        audioPreviewUrl: obj.audioPreview?.url || obj.preview_url || undefined,
+                        spotifyUrl: `https://open.spotify.com/track/${trackId}`
+                      });
+                    }
+                  }
+                }
+
+                // Recurse
+                if (Array.isArray(obj)) {
+                  obj.forEach(item => extractTracks(item, depth + 1));
+                } else {
+                  Object.values(obj).forEach(val => extractTracks(val, depth + 1));
+                }
+              };
+
+              extractTracks(payload);
+              if (tracks.length > 0) break;
+            } catch {
+              // Parse failed, try next pattern
+            }
+          }
+
+          if (tracks.length > 0) {
+            send(`🎉 ${tracks.length} nummers gevonden uit "${playlistName}" (embed, zonder login)!`, tracks.length, true, false, tracks);
+          } else {
+            send('❌ Geen nummers gevonden in de embed pagina. Probeer OAuth login voor 800+ nummers.', 0, true, true);
+          }
+
+          res.end();
+        } catch (err: any) {
+          console.error('[Embed scrape error]:', err);
+          send(`❌ Fout: ${err.message}`, 0, true, true);
+          res.end();
+        }
+      });
     }
   };
 }
