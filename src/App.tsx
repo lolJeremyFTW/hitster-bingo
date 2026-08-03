@@ -6,6 +6,8 @@ import { HitsterDiscoBall } from './components/HitsterDiscoBall';
 import { AnswerBox } from './components/AnswerBox';
 import { ClassicGame } from './components/ClassicGame';
 import { createInitialState, createPlayer, type ClassicGameState } from './utils/classicGame';
+import { JoinRoomModal } from './components/JoinRoomModal';
+import { useRoom } from './utils/useRoom';
 import { Timer25s } from './components/Timer25s';
 import { BingoGrid } from './components/BingoGrid';
 import { VictoryModal } from './components/VictoryModal';
@@ -66,6 +68,10 @@ export function App() {
     ? hitsterCategories.find(c => c.color === activeColor)
     : undefined;
 
+  // Gedeelde kamer: spelerslijst en spelstaat lopen hierlangs
+  const room = useRoom();
+  const [pendingJoinCode, setPendingJoinCode] = useState<string | null>(null);
+
   const [showVictory, setShowVictory] = useState(false);
   const [showRules, setShowRules] = useState(false);
   const [showPlaylistStudio, setShowPlaylistStudio] = useState(false);
@@ -97,12 +103,22 @@ export function App() {
     const grid = parseInt(params.get('grid') || '4', 10) as GridSize;
 
     if (room) {
+      // Niet meteen starten: eerst een naam kiezen, want die vult het scorebord
       setRoomCode(room.toUpperCase());
       if (mode) setGameMode(mode);
       if (grid && [3, 4, 5].includes(grid)) setGridSize(grid);
-      handleStartGame(mode || 'sideA', grid || 4, room.toUpperCase());
+      setPendingJoinCode(room.toUpperCase());
     }
   }, []);
+
+  /** Meedoen aan een bestaande kamer met de gekozen naam. */
+  const handleJoinWithName = async (name: string) => {
+    if (!pendingJoinCode) return;
+    const ok = await room.joinRoom(pendingJoinCode, name);
+    if (!ok) return;
+    setPendingJoinCode(null);
+    handleStartGame(gameMode, gridSize, pendingJoinCode);
+  };
 
   const handleStartGame = (mode: GameMode, grid: GridSize, code: string) => {
     setGameMode(mode);
@@ -122,11 +138,14 @@ export function App() {
     setAnswerWasCorrect(false);
 
     if (mode === 'classic') {
-      // Zolang de lobby nog niet via Supabase loopt, start je met jezelf; de
-      // spelstaat heeft al de vorm die straks gedeeld wordt.
       setClassicState(createInitialState([
         createPlayer(localPlayerId, language === 'nl' ? 'Jij' : 'You', true),
       ]));
+    }
+
+    // Host opent de kamer, zodat anderen via de QR-code kunnen binnenkomen
+    if (!room.roomCode) {
+      room.createRoom(code, mode, language === 'nl' ? 'Host' : 'Host');
     }
 
     if (!useHitsterRules) {
@@ -343,7 +362,34 @@ export function App() {
         />
       )}
 
-      {showScoreboard && <Scoreboard language={language} onClose={() => setShowScoreboard(false)} />}
+      {showScoreboard && (
+        <Scoreboard
+          language={language}
+          onClose={() => setShowScoreboard(false)}
+          roomPlayers={room.players}
+          roomCode={room.roomCode}
+          roomStatus={room.status}
+          roomError={room.error}
+          myPlayerId={room.myPlayerId}
+          // Kaarten en munten komen uit de lopende klassieke partij
+          liveStats={classicState
+            ? Object.fromEntries(classicState.players.map(p => [
+                p.id, { cards: p.timeline.length, tokens: p.tokens },
+              ]))
+            : undefined}
+        />
+      )}
+
+      {pendingJoinCode && (
+        <JoinRoomModal
+          roomCode={pendingJoinCode}
+          language={language}
+          status={room.status}
+          error={room.error}
+          onJoin={handleJoinWithName}
+          onCancel={() => setPendingJoinCode(null)}
+        />
+      )}
 
       {showQRShare && (
         <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4">
