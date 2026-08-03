@@ -1,164 +1,765 @@
 {
-  "id": "scraped_1785782661661",
   "name": "Your Library",
-  "description": "Volledig gecrawld met local scraper (26 nummers)",
-  "createdAt": "2026-08-03T18:44:21.661Z",
   "tracks": [
+    {
+      "id": "spotify:track:7EQWtaBeTMsqe73xUUiVZ2",
+      "title": "Ff Serieus",
+      "artist": "Rijck, Hef, Trobi"
+    },
+    {
+      "id": "spotify:album:2ZeN7aPktFllZL3jkh9HRg",
+      "title": "Zó Dan (Deluxe)",
+      "artist": "Rijck"
+    },
+    {
+      "id": "spotify:track:0x6vfVgZP7OjncVHTPzGYB",
+      "title": "I AM",
+      "artist": "Symba, Dr.Clips"
+    },
+    {
+      "id": "spotify:album:0mJFUKkGclriywbF4wyzKi",
+      "title": "I AM",
+      "artist": "Symba, Dr.Clips"
+    },
+    {
+      "id": "spotify:track:2Q0PvHhjbs9XFzVRAFi52R",
+      "title": "900 Miles",
+      "artist": "Bakermat, Barbara Dane"
+    },
+    {
+      "id": "spotify:album:1PyKep2MTBVcdK0RL0Aibb",
+      "title": "900 Miles",
+      "artist": "Bakermat"
+    },
+    {
+      "id": "spotify:track:7HB1Ko7OhHNP69O1fWcUnu",
+      "title": "2025 Recap",
+      "artist": "D-Double"
+    },
+    {
+      "id": "spotify:album:66HMK4pFkFuaSuHWKjdyev",
+      "title": "2025 Recap",
+      "artist": "D-Double"
+    },
+    {
+      "id": "spotify:track:5oUTqaNJHxB2S6RZ4c94fR",
+      "title": "Jongen Als Jij",
+      "artist": "Josylvio"
+    },
+    {
+      "id": "spotify:album:0qSvKIR2s0O2BaFcl23tL1",
+      "title": "REGELAAR",
+      "artist": "Josylvio"
+    },
+    {
+      "id": "spotify:track:5y4UnA1BOuxp2J0vbO575R",
+      "title": "Easily",
+      "artist": "Lucky, Säm Wilder"
+    },
+    {
+      "id": "spotify:album:3mwiS1oLVriXWEkinO2Ib1",
+      "title": "Easily",
+      "artist": "Lucky, Säm Wilder"
+    },
+    {
+      "id": "spotify:track:6U5h4WhbYufaRGXQhnileY",
+      "title": "solo",
+      "artist": "Fred again.., BLANCO"
+    },
+    {
+      "id": "spotify:album:1FdXEZw2E4Z7HBsmhkV5E7",
+      "title": "solo",
+      "artist": "Fred again.., BLANCO"
+    },
+    {
+      "id": "spotify:track:5tB7rV4Q2JBXl2oRqbv486",
+      "title": "Down Time",
+      "artist": "Phoniks"
+    },
+    {
+      "id": "spotify:album:7EEpFnrvUhYjVbY91egHqi",
+      "title": "Down Time",
+      "artist": "Phoniks"
+    },
+    {
+      "id": "spotify:track:7wFTvrlRmYIc9zKoeJXPNR",
+      "title": "Cole Palmer",
+      "artist": "V.I.C"
+    },
+    {
+      "id": "spotify:album:4BDqdm1KdI4qJ04l38BRMT",
+      "title": "Cole Palmer",
+      "artist": "V.I.C"
+    },
+    {
+      "id": "spotify:track:1WwQ714xuznu44tEnkem2g",
+      "title": "I Run",
+      "artist": "HAVEN., Kaitlin Aragon"
+    },
+    {
+      "id": "spotify:album:6gePAokYlEquPQ4LDVc1ri",
+      "title": "I Run",
+      "artist": "HAVEN., Kaitlin Aragon"
+    },
+    {
+      "id": "spotify:track:4m2S8cU6Ap7F8EI84vlGL6",
+      "title": "high, i'm famous",
+      "artist": "Hoosh, Bas"
+    },
+    {
+      "id": "spotify:album:58OIiY6OAvAcyreVJeJsFO",
+      "title": "high, i'm famous",
+      "artist": "Hoosh, Bas"
+    },
+    {
+      "id": "spotify:track:6qHrLC17ZY2ZA6b7udhPps",
+      "title": "YAYA - Remix",
+      "artist": "Compton Av, Steelz, Snoop Dogg, 310babii"
+    },
+    {
+      "id": "spotify:album:6AO2thq0bHuVb984p1DsYJ",
+      "title": "YAYA (Remix)",
+      "artist": "Compton Av, Steelz, Snoop Dogg, 310babii"
+    },
+    {
+      "id": "spotify:track:7KVkMVxVs3GqO7Vzy9hzjk",
+      "title": "MR DND",
+      "artist": "Nemzzz"
+    },
+    {
+      "id": "spotify:album:4SWWl5H8G1ZVx56WQV3yhY",
+      "title": "From Me 2 U",
+      "artist": "Nemzzz"
+    },
+    {
+      "id": "spotify:track:2N6wy7iKgZ5jlBOJiwATmE",
+      "title": "Hosh Salute!",
+      "artist": "Topboy Reezy, Blanco"
+    },
+    {
+      "id": "spotify:album:4BVwT54bFZuISIhugq8flL",
+      "title": "HOSH SALUTE!",
+      "artist": "Topboy Reezy"
+    },
+    {
+      "id": "spotify:track:0gAJSP0uKDQmCYIsXvhrCd",
+      "title": "Emergency",
+      "artist": "SOFI TUKKER, Novak, YAX.X"
+    },
+    {
+      "id": "spotify:album:4Av3gylG8DAy7ObYtbr5Cu",
+      "title": "Emergency",
+      "artist": "SOFI TUKKER, Novak, YAX.X"
+    },
+    {
+      "id": "spotify:track:4Yj5BlxJnOm6wn5DERt1H6",
+      "title": "Carmen: Habanera - Instrumental",
+      "artist": "Andre Kostelanetz, New York Philharmonic"
+    },
+    {
+      "id": "spotify:album:7aRslvEVn02pdw2ZhXay7w",
+      "title": "Opera Without Words",
+      "artist": "Andre Kostelanetz, New York Philharmonic, Columbia Symphony Orchestra"
+    },
+    {
+      "id": "spotify:track:2f2egGUYIOUjcFG3EDFg2F",
+      "title": "Masquerade Suite: Maskarad (Masquerade): I. Waltz",
+      "artist": "St. Petersburg State Symphony Orchestra, Aram Khachaturian"
+    },
+    {
+      "id": "spotify:album:5dkOBzCWTpHI908zRjfnLc",
+      "title": "Great Waltzes",
+      "artist": "St. Petersburg State Symphony Orchestra"
+    },
+    {
+      "id": "spotify:track:1Aozvs1CIdllsgoCK5mrSC",
+      "title": "Anitra's Dance",
+      "artist": "London Symphony Orchestra"
+    },
+    {
+      "id": "spotify:album:4GFYJ4ME8P7eg6np5TBeF5",
+      "title": "Classical Favourites - An Hour Of The World's Best Loved Music",
+      "artist": "London Symphony Orchestra"
+    },
+    {
+      "id": "spotify:track:0FyAT4nUMZWJmAI1Qov1Zj",
+      "title": "Masquerade (Suite): 1. Waltz - Excerpt",
+      "artist": "Aram Khachaturian, London Symphony Orchestra, Stanley Black"
+    },
+    {
+      "id": "spotify:album:55J1DF9Q5xYZ9gy5HfogOL",
+      "title": "Khachaturian: Masquerade (Suite): 1. Waltz [Excerpt]",
+      "artist": "Aram Khachaturian, London Symphony Orchestra, Stanley Black"
+    },
+    {
+      "id": "spotify:track:7FrJV8tydWEv1Mxu2mIQrm",
+      "title": "Beautiful",
+      "artist": "Snoop Dogg, Pharrell Williams, Charlie Wilson"
+    },
+    {
+      "id": "spotify:album:7F9hfZKh6WLOKME4LwCPZI",
+      "title": "Paid Tha Cost To Be Da Bo$$",
+      "artist": "Snoop Dogg"
+    },
+    {
+      "id": "spotify:track:086RZ0U22i29HR5bj0sWSB",
+      "title": "For All We Know",
+      "artist": "Ahmad Jamal"
+    },
+    {
+      "id": "spotify:album:0wulNVxoVugGBX7bwAAmGj",
+      "title": "Happy Moods",
+      "artist": "Ahmad Jamal"
+    },
+    {
+      "id": "spotify:track:3YNkdXJJLi13aPOTuZ7jqx",
+      "title": "Dreamsville",
+      "artist": "Wes Montgomery Trio"
+    },
+    {
+      "id": "spotify:album:5AHC3WGOG20lpz6aTAN3pS",
+      "title": "Guitar On The Go",
+      "artist": "Wes Montgomery Trio"
+    },
+    {
+      "id": "spotify:track:30elPK31lRDN1kFjnt7HRQ",
+      "title": "In The Blue Of The Evening",
+      "artist": "Tommy Flanagan Trio"
+    },
+    {
+      "id": "spotify:album:6ib55A9F22eHSqsVDjQPvu",
+      "title": "Tommy Flanagan Trio",
+      "artist": "Tommy Flanagan Trio"
+    },
+    {
+      "id": "spotify:track:40mjsnRjCpycdUw3xhS20g",
+      "title": "GATTI",
+      "artist": "JACKBOYS, Pop Smoke, Travis Scott"
+    },
+    {
+      "id": "spotify:album:1Sf8GsXG32t0jNrX11xqWx",
+      "title": "JACKBOYS",
+      "artist": "JACKBOYS, Travis Scott"
+    },
+    {
+      "id": "spotify:track:1qeXPjrytHI1sRl5Bi9Ddc",
+      "title": "Heftig",
+      "artist": "De Fellas"
+    },
+    {
+      "id": "spotify:album:5yCqztfazFZ6hOWjCW0sKA",
+      "title": "Heftig",
+      "artist": "De Fellas"
+    },
+    {
+      "id": "6zWU7YALeEDMcPGhKKZJhV",
+      "title": "Navajo",
+      "artist": "Masego",
+      "spotifyUrl": "https://open.spotify.com/track/6zWU7YALeEDMcPGhKKZJhV"
+    },
+    {
+      "id": "0PV1TFUMTBrDETzW6KQulB",
+      "title": "93 'Til Infinity",
+      "artist": "Souls Of Mischief",
+      "spotifyUrl": "https://open.spotify.com/track/0PV1TFUMTBrDETzW6KQulB"
+    },
+    {
+      "id": "3UYuDTslR35thjQzaVwRMe",
+      "title": "Get Down",
+      "artist": "Nas",
+      "spotifyUrl": "https://open.spotify.com/track/3UYuDTslR35thjQzaVwRMe"
+    },
+    {
+      "id": "2uuJs2nltcYFh9pkKP7bW4",
+      "title": "Show Me",
+      "artist": "Joey Bada$$",
+      "spotifyUrl": "https://open.spotify.com/track/2uuJs2nltcYFh9pkKP7bW4"
+    },
+    {
+      "id": "0bkTdkWwGk3OGFX0afD3Wj",
+      "title": "Mystery Lady",
+      "artist": "Masego, Don Toliver",
+      "spotifyUrl": "https://open.spotify.com/track/0bkTdkWwGk3OGFX0afD3Wj"
+    },
+    {
+      "id": "34FhndFs4d8ltOVj8JqN4s",
+      "title": "Jammin",
+      "artist": "RUBII",
+      "spotifyUrl": "https://open.spotify.com/track/34FhndFs4d8ltOVj8JqN4s"
+    },
+    {
+      "id": "7p4vHnYXkxlzvfePJVpcTr",
+      "title": "Feels Like Summer",
+      "artist": "Childish Gambino",
+      "spotifyUrl": "https://open.spotify.com/track/7p4vHnYXkxlzvfePJVpcTr"
+    },
+    {
+      "id": "0m0GzwCkfuFcxOlLjgpudo",
+      "title": "Nikes on My Feet",
+      "artist": "Mac Miller",
+      "spotifyUrl": "https://open.spotify.com/track/0m0GzwCkfuFcxOlLjgpudo"
+    },
+    {
+      "id": "2wGSgTmgSF3xjRrHkTc25R",
+      "title": "Hate It Or Love It",
+      "artist": "The Game, 50 Cent",
+      "spotifyUrl": "https://open.spotify.com/track/2wGSgTmgSF3xjRrHkTc25R"
+    },
+    {
+      "id": "7dltD9eEX7X1zk8JJ9BS0e",
+      "title": "Superstar (feat. Matthew Santos)",
+      "artist": "Lupe Fiasco, Matthew Santos",
+      "spotifyUrl": "https://open.spotify.com/track/7dltD9eEX7X1zk8JJ9BS0e"
+    },
+    {
+      "id": "0xdYzkbBBfTevSyOJqWUSX",
+      "title": "Sky's the Limit (feat. 112) - 2014 Remaster",
+      "artist": "The Notorious B.I.G., 112",
+      "spotifyUrl": "https://open.spotify.com/track/0xdYzkbBBfTevSyOJqWUSX"
+    },
+    {
+      "id": "4iz9lGMjU1lXS51oPmUmTe",
+      "title": "Homecoming",
+      "artist": "Kanye West, Chris Martin",
+      "spotifyUrl": "https://open.spotify.com/track/4iz9lGMjU1lXS51oPmUmTe"
+    },
+    {
+      "id": "0XgpiStoxq1IJncYlPrvZ5",
+      "title": "Runnin'",
+      "artist": "The Pharcyde",
+      "spotifyUrl": "https://open.spotify.com/track/0XgpiStoxq1IJncYlPrvZ5"
+    },
+    {
+      "id": "4AE7Lj39VnSZNOmGH2iZaq",
+      "title": "Do For Love",
+      "artist": "2Pac",
+      "spotifyUrl": "https://open.spotify.com/track/4AE7Lj39VnSZNOmGH2iZaq"
+    },
+    {
+      "id": "5mqPg2dyqb1gBNyg9ycGcT",
+      "title": "Party And Bullshit",
+      "artist": "The Notorious B.I.G.",
+      "spotifyUrl": "https://open.spotify.com/track/5mqPg2dyqb1gBNyg9ycGcT"
+    },
+    {
+      "id": "2YIIDMcF9zWJ2xcFSA99lH",
+      "title": "Charge It",
+      "artist": "ENNY",
+      "spotifyUrl": "https://open.spotify.com/track/2YIIDMcF9zWJ2xcFSA99lH"
+    },
+    {
+      "id": "0uU6wpqMrSe8SuIAJNIje9",
+      "title": "Jealousy",
+      "artist": "RUBII",
+      "spotifyUrl": "https://open.spotify.com/track/0uU6wpqMrSe8SuIAJNIje9"
+    },
+    {
+      "id": "0xta6Gah3inmeHbj0e3F9a",
+      "title": "Headshots (4r da Locals)",
+      "artist": "Isaiah Rashad",
+      "spotifyUrl": "https://open.spotify.com/track/0xta6Gah3inmeHbj0e3F9a"
+    },
+    {
+      "id": "5SkRLpaGtvYPhw02vZhQQ9",
+      "title": "All Falls Down",
+      "artist": "Kanye West, Syleena Johnson",
+      "spotifyUrl": "https://open.spotify.com/track/5SkRLpaGtvYPhw02vZhQQ9"
+    },
+    {
+      "id": "7AvuIMRKdo5RvS6YIzXjsj",
+      "title": "Tell Me Why",
+      "artist": "Gotts Street Park, Olive Jones",
+      "spotifyUrl": "https://open.spotify.com/track/7AvuIMRKdo5RvS6YIzXjsj"
+    },
+    {
+      "id": "spotify:track:16Pbpu633GSU4w2G5LKPUS",
+      "title": "Movie",
+      "artist": "D-Double"
+    },
+    {
+      "id": "spotify:album:0UZmhC31ZsKVZVJC2JJgb7",
+      "title": "Movie",
+      "artist": "D-Double"
+    },
+    {
+      "id": "spotify:track:1XwtjvnuCr9jw86hYKxJAd",
+      "title": "Central Cee",
+      "artist": "bitchbaby"
+    },
+    {
+      "id": "spotify:album:0B6Es5Q7tGNcrrrhn2064Q",
+      "title": "Central Cee",
+      "artist": "bitchbaby"
+    },
+    {
+      "id": "spotify:track:6ZRlwN14BU3XpYCVTCvxtX",
+      "title": "My Girls",
+      "artist": "Dj Growba"
+    },
+    {
+      "id": "spotify:album:2DmK9SxPLZp1XLlToOLYgW",
+      "title": "My Girls",
+      "artist": "Dj Growba"
+    },
+    {
+      "id": "spotify:track:3aYNvFy0lGxAx5baY5kztG",
+      "title": "CHAMPIONSHIP GAME",
+      "artist": "BeatsByFreeze"
+    },
+    {
+      "id": "spotify:album:6W8HE3FeGAScBRc24X2NG9",
+      "title": "ESSENCE",
+      "artist": "BeatsByFreeze"
+    },
+    {
+      "id": "spotify:track:2xq0T6R1a1cFBYCn7HPKtt",
+      "title": "Heaterz",
+      "artist": "AJ Tracey, Pozer"
+    },
+    {
+      "id": "spotify:album:6WRkgezvMJYr3bkSFUCPqU",
+      "title": "Heaterz",
+      "artist": "AJ Tracey, Pozer"
+    },
+    {
+      "id": "spotify:track:2Zej1ZTJJNDcRj8e8iWUUo",
+      "title": "Ten (feat. Skepta)",
+      "artist": "Central Cee, Skepta"
+    },
+    {
+      "id": "spotify:album:1pnm9zBlblhTRlE46ItLzU",
+      "title": "CAN'T RUSH GREATNESS",
+      "artist": "Central Cee"
+    },
+    {
+      "id": "spotify:track:4Wau536XC9kijAppRmtzuW",
+      "title": "Fake Friends",
+      "artist": "Kidwild"
+    },
+    {
+      "id": "spotify:album:2iJTbYfBiOhhatNhoPKuST",
+      "title": "Distro Kid",
+      "artist": "Kidwild"
+    },
+    {
+      "id": "spotify:track:2uMkradY7AwoycLaupIpNP",
+      "title": "Summertime",
+      "artist": "SL, Knucks, Sainté"
+    },
+    {
+      "id": "spotify:album:2Ne4WxL1YgJMf6r16br4mk",
+      "title": "Summertime",
+      "artist": "SL, Knucks, Sainté"
+    },
+    {
+      "id": "spotify:track:5RMTsrJkrtumtiIZjy7dL6",
+      "title": "H.Y.B. (feat. Bas & Central Cee)",
+      "artist": "J. Cole, Bas, Central Cee"
+    },
+    {
+      "id": "spotify:album:57wh3BpvUF2tmvwoGSjUe3",
+      "title": "Might Delete Later",
+      "artist": "J. Cole"
+    },
+    {
+      "id": "spotify:track:3cfQ8cCFhqekaqSsuhKXAj",
+      "title": "3x",
+      "artist": "Jim Legxacy, Dave"
+    },
+    {
+      "id": "spotify:album:0uqw8DmJjWCODFySYWx47f",
+      "title": "black british music (2025)",
+      "artist": "Jim Legxacy"
+    },
+    {
+      "id": "spotify:track:1sUIVWUAsrwLfYSAhBFiIq",
+      "title": "Falcon Flow",
+      "artist": "FourNine"
+    },
+    {
+      "id": "spotify:album:6IayidDNlXA9XuMSLkeUNY",
+      "title": "Falcon Flow",
+      "artist": "FourNine"
+    },
+    {
+      "id": "spotify:track:61YM5SkqqeUjIBL7It56cs",
+      "title": "Nocturne Op. 9 No. 2",
+      "artist": "Frédéric Chopin, Olga Bordas"
+    },
+    {
+      "id": "spotify:album:5aftlLJi5cmXRnPQjwUak2",
+      "title": "JUST THE BEST MUSIC Vol. 2 Solo Piano Relax Playlist",
+      "artist": "Various Artists"
+    },
+    {
+      "id": "spotify:track:7aWSnQuOMCuuXKwC4riXyg",
+      "title": "BETERE MORGEN",
+      "artist": "NESS, Guan"
+    },
+    {
+      "id": "spotify:album:6DjjmoiVck1AkYHdYk2uPc",
+      "title": "BETERE MORGEN",
+      "artist": "NESS, Guan"
+    },
+    {
+      "id": "spotify:track:7AA5z3PltK9Rltwrf2Q2dw",
+      "title": "Vechten Met Mongolen",
+      "artist": "Vinny, SAYONARA"
+    },
+    {
+      "id": "spotify:album:2FA66fs6IMDNgrhjW5w04G",
+      "title": "RG PACK 11: Zwartwerker",
+      "artist": "RAFTING GOODS, Vinny"
+    },
+    {
+      "id": "spotify:track:0aB0v4027ukVziUGwVGYpG",
+      "title": "tv off (feat. lefty gunplay)",
+      "artist": "Kendrick Lamar, Lefty Gunplay"
+    },
+    {
+      "id": "spotify:album:0hvT3yIEysuuvkK73vgdcW",
+      "title": "GNX",
+      "artist": "Kendrick Lamar"
+    },
+    {
+      "id": "spotify:track:4qQf0j7KIuhOqskPqTWIu5",
+      "title": "5 Gram",
+      "artist": "Vic9, Hef"
+    },
+    {
+      "id": "spotify:album:2ZNWxSl20jkfz6fi6ChEGt",
+      "title": "Bloed",
+      "artist": "Vic9"
+    },
+    {
+      "id": "spotify:track:0nmW4fvqTwUDjlz13MNpJU",
+      "title": "Elevate",
+      "artist": "Nemzzz"
+    },
+    {
+      "id": "spotify:album:4aKGX3kexucFfeBoNBxQcr",
+      "title": "Elevate",
+      "artist": "Nemzzz"
+    },
+    {
+      "id": "spotify:track:4eIkgU9qfmwwPicaCRUI55",
+      "title": "L's",
+      "artist": "Nemzzz"
+    },
+    {
+      "id": "spotify:album:2rIbOVBLitHcUD2g9UCz1P",
+      "title": "DO NOT DISTURB (DELUXE)",
+      "artist": "Nemzzz"
+    },
+    {
+      "id": "spotify:track:0BaipJ80fvka5OhKrjnpGO",
+      "title": "Grown Man Sport",
+      "artist": "Pete Rock, InI"
+    },
+    {
+      "id": "spotify:album:7BWhIFnxTALf0r3HWRiupG",
+      "title": "Center of Attention",
+      "artist": "Pete Rock, InI"
+    },
+    {
+      "id": "spotify:track:7aqfrAY2p9BUSiupwk3svU",
+      "title": "First Person Shooter (feat. J. Cole)",
+      "artist": "Drake, J. Cole"
+    },
+    {
+      "id": "spotify:album:4czdORdCWP9umpbhFXK2fW",
+      "title": "For All The Dogs",
+      "artist": "Drake"
+    },
+    {
+      "id": "spotify:track:23rqpZeCnft08k6Hwkgsw1",
+      "title": "Where's my man?",
+      "artist": "FourNine"
+    },
+    {
+      "id": "spotify:album:55YSbQF9X1zMHCil8g4NXF",
+      "title": "Where's my man?",
+      "artist": "FourNine"
+    },
+    {
+      "id": "spotify:track:5S46E2UNGDYcwZ26yj6aNr",
+      "title": "Brilliant Mind",
+      "artist": "Blanco"
+    },
+    {
+      "id": "spotify:album:4Y2Cla7P9zqTppJ1Xq92At",
+      "title": "ReBourne",
+      "artist": "Blanco"
+    },
+    {
+      "id": "spotify:track:3NZz7DWeVQesSOn6mO39F7",
+      "title": "How It Feels",
+      "artist": "Barry Can't Swim"
+    },
+    {
+      "id": "spotify:album:5LASDBDtLLEt3QqVtgOoaM",
+      "title": "When Will We Land?",
+      "artist": "Barry Can't Swim"
+    },
+    {
+      "id": "spotify:track:2HALQBSAvpw1oCzL5QsrT2",
+      "title": "Trojan Horse",
+      "artist": "Dave, Central Cee"
+    },
+    {
+      "id": "spotify:album:0On7uutIu9rZRvP9aJbMog",
+      "title": "Split Decision",
+      "artist": "Dave, Central Cee"
+    },
+    {
+      "id": "spotify:track:2tH28YyKYOldxhuBHoI79M",
+      "title": "Just the Two of Us (feat. Bill Withers) - Edit",
+      "artist": "Grover Washington, Jr., Bill Withers"
+    },
+    {
+      "id": "spotify:album:0XmgSYx9bj4sqpcXVgKs2C",
+      "title": "Lean on Me: The Best of Bill Withers",
+      "artist": "Bill Withers"
+    },
     {
       "id": "7EQWtaBeTMsqe73xUUiVZ2",
       "title": "Ff Serieus",
-      "artist": "Rijck, Hef, Trobi",
-      "spotifyUrl": "https://open.spotify.com/track/7EQWtaBeTMsqe73xUUiVZ2"
+      "artist": "Rijck, Hef, Trobi"
     },
     {
       "id": "0x6vfVgZP7OjncVHTPzGYB",
       "title": "I AM",
-      "artist": "Symba, Dr.Clips",
-      "spotifyUrl": "https://open.spotify.com/track/0x6vfVgZP7OjncVHTPzGYB"
+      "artist": "Symba, Dr.Clips"
     },
     {
       "id": "2Q0PvHhjbs9XFzVRAFi52R",
       "title": "900 Miles",
-      "artist": "Bakermat, Barbara Dane",
-      "spotifyUrl": "https://open.spotify.com/track/2Q0PvHhjbs9XFzVRAFi52R"
+      "artist": "Bakermat, Barbara Dane"
     },
     {
       "id": "7HB1Ko7OhHNP69O1fWcUnu",
       "title": "2025 Recap",
-      "artist": "D-Double",
-      "spotifyUrl": "https://open.spotify.com/track/7HB1Ko7OhHNP69O1fWcUnu"
+      "artist": "D-Double"
     },
     {
       "id": "5oUTqaNJHxB2S6RZ4c94fR",
       "title": "Jongen Als Jij",
-      "artist": "Josylvio",
-      "spotifyUrl": "https://open.spotify.com/track/5oUTqaNJHxB2S6RZ4c94fR"
+      "artist": "Josylvio"
     },
     {
       "id": "5y4UnA1BOuxp2J0vbO575R",
       "title": "Easily",
-      "artist": "Lucky, Säm Wilder",
-      "spotifyUrl": "https://open.spotify.com/track/5y4UnA1BOuxp2J0vbO575R"
+      "artist": "Lucky, Säm Wilder"
     },
     {
       "id": "6U5h4WhbYufaRGXQhnileY",
       "title": "solo",
-      "artist": "Fred again.., BLANCO",
-      "spotifyUrl": "https://open.spotify.com/track/6U5h4WhbYufaRGXQhnileY"
+      "artist": "Fred again.., BLANCO"
     },
     {
       "id": "5tB7rV4Q2JBXl2oRqbv486",
       "title": "Down Time",
-      "artist": "Phoniks",
-      "spotifyUrl": "https://open.spotify.com/track/5tB7rV4Q2JBXl2oRqbv486"
+      "artist": "Phoniks"
     },
     {
       "id": "7wFTvrlRmYIc9zKoeJXPNR",
       "title": "Cole Palmer",
-      "artist": "V.I.C",
-      "spotifyUrl": "https://open.spotify.com/track/7wFTvrlRmYIc9zKoeJXPNR"
+      "artist": "V.I.C"
     },
     {
       "id": "1WwQ714xuznu44tEnkem2g",
       "title": "I Run",
-      "artist": "HAVEN., Kaitlin Aragon",
-      "spotifyUrl": "https://open.spotify.com/track/1WwQ714xuznu44tEnkem2g"
+      "artist": "HAVEN., Kaitlin Aragon"
     },
     {
       "id": "4m2S8cU6Ap7F8EI84vlGL6",
       "title": "high, i'm famous",
-      "artist": "Hoosh, Bas",
-      "spotifyUrl": "https://open.spotify.com/track/4m2S8cU6Ap7F8EI84vlGL6"
+      "artist": "Hoosh, Bas"
     },
     {
       "id": "6qHrLC17ZY2ZA6b7udhPps",
       "title": "YAYA - Remix",
-      "artist": "Compton Av, Steelz, Snoop Dogg, 310babii",
-      "spotifyUrl": "https://open.spotify.com/track/6qHrLC17ZY2ZA6b7udhPps"
+      "artist": "Compton Av, Steelz, Snoop Dogg, 310babii"
     },
     {
       "id": "7KVkMVxVs3GqO7Vzy9hzjk",
       "title": "MR DND",
-      "artist": "Nemzzz",
-      "spotifyUrl": "https://open.spotify.com/track/7KVkMVxVs3GqO7Vzy9hzjk"
+      "artist": "Nemzzz"
     },
     {
       "id": "2N6wy7iKgZ5jlBOJiwATmE",
       "title": "Hosh Salute!",
-      "artist": "Topboy Reezy, Blanco",
-      "spotifyUrl": "https://open.spotify.com/track/2N6wy7iKgZ5jlBOJiwATmE"
+      "artist": "Topboy Reezy, Blanco"
     },
     {
       "id": "0gAJSP0uKDQmCYIsXvhrCd",
       "title": "Emergency",
-      "artist": "SOFI TUKKER, Novak, YAX.X",
-      "spotifyUrl": "https://open.spotify.com/track/0gAJSP0uKDQmCYIsXvhrCd"
+      "artist": "SOFI TUKKER, Novak, YAX.X"
     },
     {
       "id": "4Yj5BlxJnOm6wn5DERt1H6",
       "title": "Carmen: Habanera - Instrumental",
-      "artist": "Andre Kostelanetz, New York Philharmonic",
-      "spotifyUrl": "https://open.spotify.com/track/4Yj5BlxJnOm6wn5DERt1H6"
+      "artist": "Andre Kostelanetz, New York Philharmonic"
     },
     {
       "id": "2f2egGUYIOUjcFG3EDFg2F",
       "title": "Masquerade Suite: Maskarad (Masquerade): I. Waltz",
-      "artist": "St. Petersburg State Symphony Orchestra, Aram Khachaturian",
-      "spotifyUrl": "https://open.spotify.com/track/2f2egGUYIOUjcFG3EDFg2F"
+      "artist": "St. Petersburg State Symphony Orchestra, Aram Khachaturian"
     },
     {
       "id": "1Aozvs1CIdllsgoCK5mrSC",
       "title": "Anitra's Dance",
-      "artist": "London Symphony Orchestra",
-      "spotifyUrl": "https://open.spotify.com/track/1Aozvs1CIdllsgoCK5mrSC"
+      "artist": "London Symphony Orchestra"
     },
     {
       "id": "0FyAT4nUMZWJmAI1Qov1Zj",
       "title": "Masquerade (Suite): 1. Waltz - Excerpt",
-      "artist": "Aram Khachaturian, London Symphony Orchestra, Stanley Black",
-      "spotifyUrl": "https://open.spotify.com/track/0FyAT4nUMZWJmAI1Qov1Zj"
+      "artist": "Aram Khachaturian, London Symphony Orchestra, Stanley Black"
     },
     {
       "id": "7FrJV8tydWEv1Mxu2mIQrm",
       "title": "Beautiful",
-      "artist": "Snoop Dogg, Pharrell Williams, Charlie Wilson",
-      "spotifyUrl": "https://open.spotify.com/track/7FrJV8tydWEv1Mxu2mIQrm"
+      "artist": "Snoop Dogg, Pharrell Williams, Charlie Wilson"
     },
     {
       "id": "086RZ0U22i29HR5bj0sWSB",
       "title": "For All We Know",
-      "artist": "Ahmad Jamal",
-      "spotifyUrl": "https://open.spotify.com/track/086RZ0U22i29HR5bj0sWSB"
+      "artist": "Ahmad Jamal"
     },
     {
       "id": "3YNkdXJJLi13aPOTuZ7jqx",
       "title": "Dreamsville",
-      "artist": "Wes Montgomery Trio",
-      "spotifyUrl": "https://open.spotify.com/track/3YNkdXJJLi13aPOTuZ7jqx"
+      "artist": "Wes Montgomery Trio"
     },
     {
       "id": "30elPK31lRDN1kFjnt7HRQ",
       "title": "In The Blue Of The Evening",
-      "artist": "Tommy Flanagan Trio",
-      "spotifyUrl": "https://open.spotify.com/track/30elPK31lRDN1kFjnt7HRQ"
+      "artist": "Tommy Flanagan Trio"
     },
     {
       "id": "40mjsnRjCpycdUw3xhS20g",
       "title": "GATTI",
-      "artist": "JACKBOYS, Pop Smoke, Travis Scott",
-      "spotifyUrl": "https://open.spotify.com/track/40mjsnRjCpycdUw3xhS20g"
+      "artist": "JACKBOYS, Pop Smoke, Travis Scott"
     },
     {
       "id": "1qeXPjrytHI1sRl5Bi9Ddc",
       "title": "Heftig",
-      "artist": "De Fellas",
-      "spotifyUrl": "https://open.spotify.com/track/1qeXPjrytHI1sRl5Bi9Ddc"
+      "artist": "De Fellas"
     },
     {
       "id": "16Pbpu633GSU4w2G5LKPUS",
       "title": "Movie",
-      "artist": "D-Double",
-      "spotifyUrl": "https://open.spotify.com/track/16Pbpu633GSU4w2G5LKPUS"
+      "artist": "D-Double"
+    },
+    {
+      "id": "1XwtjvnuCr9jw86hYKxJAd",
+      "title": "Central Cee",
+      "artist": "bitchbaby"
+    },
+    {
+      "id": "6ZRlwN14BU3XpYCVTCvxtX",
+      "title": "My Girls",
+      "artist": "Dj Growba"
     }
   ]
 }

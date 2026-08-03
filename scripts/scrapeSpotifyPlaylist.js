@@ -1,160 +1,211 @@
-import puppeteer from 'puppeteer';
+/**
+ * Spotify Playlist Importer — Official Web API approach
+ * 
+ * Uses the Spotify Web API (client credentials flow) to fetch ALL tracks
+ * from a public playlist, paginated 100 at a time. No browser needed.
+ * 
+ * Usage:
+ *   node scripts/scrapeSpotifyPlaylist.js <playlist-url> [clientId] [clientSecret]
+ */
 import fs from 'fs';
 import path from 'path';
 
-export async function scrapeSpotifyPlaylistFullNetwork(playlistUrl, onLog) {
+/**
+ * Extract playlist ID from a Spotify URL or raw ID
+ */
+export function extractPlaylistId(urlOrId) {
+  const trimmed = urlOrId.trim();
+  const match = trimmed.match(/playlist[\/:]([ a-zA-Z0-9]{22})/);
+  if (match) return match[1];
+  if (/^[a-zA-Z0-9]{22}$/.test(trimmed)) return trimmed;
+  return null;
+}
+
+/**
+ * Get an access token using Spotify Client Credentials flow
+ */
+async function getAccessToken(clientId, clientSecret) {
+  const body = new URLSearchParams({ grant_type: 'client_credentials' });
+  const res = await fetch('https://accounts.spotify.com/api/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': 'Basic ' + Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
+    },
+    body
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Token request failed (${res.status}): ${errText}`);
+  }
+
+  const data = await res.json();
+  return data.access_token;
+}
+
+/**
+ * Try to get an anonymous access token from Spotify's web player endpoint.
+ * This is the same token the web player uses before login.
+ */
+async function getAnonymousToken() {
+  try {
+    const res = await fetch('https://open.spotify.com/get_access_token?reason=transport&productType=web_player', {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      }
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.accessToken || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch ALL tracks from a Spotify playlist using the Web API.
+ * Paginates through all pages (100 tracks per page).
+ * 
+ * @param {string} playlistId - Spotify playlist ID
+ * @param {string} accessToken - Spotify access token
+ * @param {function} onLog - Callback for progress logging
+ * @returns {{ name: string, tracks: Array }} 
+ */
+export async function fetchAllPlaylistTracks(playlistId, accessToken, onLog) {
   const log = (msg, count = 0) => {
     console.log(msg);
     if (onLog) onLog(msg, count);
   };
 
-  log(`🚀 Starting Advanced Network Scraper for: ${playlistUrl}`);
-
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--window-size=1400,900']
+  // First, get playlist metadata
+  const metaRes = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}?fields=name,description,tracks.total`, {
+    headers: { 'Authorization': `Bearer ${accessToken}` }
   });
 
-  const page = await browser.newPage();
-  await page.setViewport({ width: 1400, height: 900 });
-  await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-
-  const tracksMap = new Map();
-
-  // Intercept all JSON network responses from Spotify APIs!
-  page.on('response', async (res) => {
-    const url = res.url();
-    if (
-      url.includes('api-partner.spotify.com') ||
-      url.includes('spclient.wg.spotify.com') ||
-      url.includes('open.spotify.com/embed') ||
-      url.includes('pathfinder') ||
-      url.includes('playlist')
-    ) {
-      try {
-        const text = await res.text();
-        if (!text || text.length < 50) return;
-
-        // Recursively extract all track objects from Spotify JSON payloads
-        if (text.startsWith('{') || text.startsWith('[')) {
-          const json = JSON.parse(text);
-
-          const extractFromObject = (obj) => {
-            if (!obj || typeof obj !== 'object') return;
-
-            // Check if object is a Track
-            const isTrack = obj.type === 'track' || (obj.name && (obj.artists || obj.subtitle || obj.album));
-            if (isTrack && obj.name) {
-              const title = obj.name || obj.title;
-              let artist = 'Unknown Artist';
-
-              if (Array.isArray(obj.artists)) {
-                artist = obj.artists.map((a) => a.name).filter(Boolean).join(', ');
-              } else if (typeof obj.subtitle === 'string') {
-                artist = obj.subtitle;
-              } else if (obj.artists?.items) {
-                artist = obj.artists.items.map((a) => a.profile?.name || a.name).filter(Boolean).join(', ');
-              }
-
-              let year;
-              const relDate = obj.album?.release_date || obj.releaseDate || obj.album?.date;
-              if (relDate) {
-                const yMatch = String(relDate).match(/\d{4}/);
-                if (yMatch) year = parseInt(yMatch[0], 10);
-              }
-
-              const trackId = obj.id || obj.uri || title;
-              if (title && title.toLowerCase() !== 'title' && !tracksMap.has(trackId)) {
-                tracksMap.set(trackId, {
-                  id: trackId,
-                  title: title.trim(),
-                  artist: artist.trim(),
-                  year,
-                  audioPreviewUrl: obj.preview_url || obj.audioPreview?.url || undefined,
-                  spotifyUrl: obj.id ? `https://open.spotify.com/track/${obj.id}` : undefined
-                });
-                log(`⚡ [Network API] Intercepted: "${title}" by ${artist} (${tracksMap.size} total)`, tracksMap.size);
-              }
-            }
-
-            if (Array.isArray(obj)) {
-              obj.forEach(extractFromObject);
-            } else {
-              Object.values(obj).forEach(extractFromObject);
-            }
-          };
-
-          extractFromObject(json);
-        }
-      } catch (e) {
-        // Ignore non-JSON
-      }
-    }
-  });
-
-  log('🌐 Navigating to Spotify Playlist page...');
-  await page.goto(playlistUrl, { waitUntil: 'networkidle2', timeout: 60000 });
-
-  const playlistName = await page.evaluate(() => {
-    const h1 = document.querySelector('h1');
-    return h1 ? h1.innerText.trim() : 'Spotify Playlist';
-  });
-
-  log(`🎶 Playlist: "${playlistName}". Auto-scrolling to trigger network pagination...`);
-
-  for (let i = 1; i <= 40; i++) {
-    await page.evaluate(() => {
-      const main = document.querySelector('main') || document.documentElement;
-      main.scrollBy(0, 1200);
-      window.scrollBy(0, 1200);
-    });
-    await page.keyboard.press('PageDown');
-    await new Promise(r => setTimeout(r, 600));
-
-    const domTracks = await page.evaluate(() => {
-      const rows = document.querySelectorAll('[data-testid="tracklist-row"], [role="row"]');
-      const res = [];
-      rows.forEach(r => {
-        const tEl = r.querySelector('[data-testid="internal-track-link"], a[href*="/track/"]');
-        const aEls = r.querySelectorAll('a[href*="/artist/"]');
-        if (tEl) {
-          const title = tEl.innerText.trim();
-          const href = tEl.getAttribute('href') || '';
-          const m = href.match(/\/track\/([a-zA-Z0-9]+)/);
-          const id = m ? m[1] : title;
-          const artist = Array.from(aEls).map(a => a.innerText.trim()).join(', ');
-          if (title && title !== 'Title') {
-            res.push({ id, title, artist: artist || 'Unknown Artist' });
-          }
-        }
-      });
-      return res;
-    });
-
-    domTracks.forEach(t => {
-      if (!tracksMap.has(t.id)) {
-        tracksMap.set(t.id, t);
-        log(`📜 [DOM Track] Captured: "${t.title}" (${tracksMap.size} total)`, tracksMap.size);
-      }
-    });
+  if (!metaRes.ok) {
+    const errText = await metaRes.text();
+    throw new Error(`Playlist metadata failed (${metaRes.status}): ${errText}`);
   }
 
-  await browser.close();
+  const meta = await metaRes.json();
+  const playlistName = meta.name || 'Spotify Playlist';
+  const totalTracks = meta.tracks?.total || 0;
 
-  const finalTracks = Array.from(tracksMap.values());
-  log(`🎉 FINISHED! Total tracks intercepted: ${finalTracks.length}`, finalTracks.length);
+  log(`🎶 Playlist: "${playlistName}" — ${totalTracks} nummers totaal`);
+
+  const allTracks = [];
+  let offset = 0;
+  const limit = 100;
+
+  while (offset < totalTracks) {
+    const url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=${limit}&offset=${offset}&fields=items(track(id,name,artists(name),album(name,release_date),preview_url,external_urls))`;
+    
+    const res = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+
+    if (!res.ok) {
+      log(`⚠️ Pagina ${Math.floor(offset / limit) + 1} mislukt (status ${res.status}), stoppen...`);
+      break;
+    }
+
+    const data = await res.json();
+    const items = data.items || [];
+
+    if (items.length === 0) break;
+
+    for (const item of items) {
+      const track = item.track;
+      if (!track || !track.name) continue; // Skip null/local tracks
+
+      const title = track.name;
+      const artist = track.artists ? track.artists.map(a => a.name).join(', ') : 'Unknown Artist';
+      let year;
+      if (track.album?.release_date) {
+        const yMatch = track.album.release_date.match(/\d{4}/);
+        if (yMatch) year = parseInt(yMatch[0], 10);
+      }
+
+      allTracks.push({
+        id: track.id || `sp_${allTracks.length}`,
+        title: title.trim(),
+        artist: artist.trim(),
+        year,
+        audioPreviewUrl: track.preview_url || undefined,
+        spotifyUrl: track.external_urls?.spotify || `https://open.spotify.com/track/${track.id}`
+      });
+    }
+
+    log(`📦 Pagina ${Math.floor(offset / limit) + 1}: ${items.length} nummers opgehaald (${allTracks.length}/${totalTracks} totaal)`, allTracks.length);
+    offset += limit;
+  }
+
+  log(`🎉 KLAAR! ${allTracks.length} van ${totalTracks} nummers succesvol opgehaald!`, allTracks.length);
 
   return {
     name: playlistName,
-    tracks: finalTracks
+    tracks: allTracks
   };
 }
 
+/**
+ * Main entry: fetch all tracks from a Spotify playlist URL
+ */
+export async function importSpotifyPlaylist(playlistUrl, clientId, clientSecret, onLog) {
+  const log = (msg, count = 0) => {
+    console.log(msg);
+    if (onLog) onLog(msg, count);
+  };
+
+  const playlistId = extractPlaylistId(playlistUrl);
+  if (!playlistId) {
+    throw new Error(`Ongeldige Spotify URL: ${playlistUrl}`);
+  }
+
+  log(`🚀 Spotify Playlist Import starten voor: ${playlistId}`);
+
+  let accessToken = null;
+
+  // Method 1: Client Credentials (if provided)
+  if (clientId && clientSecret) {
+    log('🔑 Authenticeren met Spotify API credentials...');
+    try {
+      accessToken = await getAccessToken(clientId, clientSecret);
+      log('✅ Spotify API token verkregen!');
+    } catch (err) {
+      log(`⚠️ Client credentials mislukt: ${err.message}`);
+    }
+  }
+
+  // Method 2: Anonymous token fallback
+  if (!accessToken) {
+    log('🔓 Proberen met anoniem Spotify token...');
+    accessToken = await getAnonymousToken();
+    if (accessToken) {
+      log('✅ Anoniem token verkregen!');
+    } else {
+      log('❌ Geen anoniem token beschikbaar. Geef Spotify API credentials op.');
+      throw new Error('Geen toegangstoken beschikbaar. Maak een gratis Spotify app aan op https://developer.spotify.com/dashboard');
+    }
+  }
+
+  return fetchAllPlaylistTracks(playlistId, accessToken, onLog);
+}
+
+// CLI usage
 if (process.argv[1] && process.argv[1].endsWith('scrapeSpotifyPlaylist.js')) {
   const url = process.argv[2] || 'https://open.spotify.com/playlist/5zSKBda7QTnWMHecVs20E3';
-  scrapeSpotifyPlaylistFullNetwork(url).then(res => {
+  const clientId = process.argv[3] || process.env.SPOTIFY_CLIENT_ID;
+  const clientSecret = process.argv[4] || process.env.SPOTIFY_CLIENT_SECRET;
+
+  importSpotifyPlaylist(url, clientId, clientSecret).then(result => {
     const outputPath = path.join(process.cwd(), 'src', 'data', 'myScrapedPlaylist.json');
-    fs.writeFileSync(outputPath, JSON.stringify(res, null, 2));
-    console.log(`💾 Saved ${res.tracks.length} tracks to ${outputPath}`);
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    fs.writeFileSync(outputPath, JSON.stringify(result, null, 2));
+    console.log(`💾 Saved ${result.tracks.length} tracks to ${outputPath}`);
+  }).catch(err => {
+    console.error(`❌ Error: ${err.message}`);
+    process.exit(1);
   });
 }

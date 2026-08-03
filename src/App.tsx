@@ -46,7 +46,21 @@ export function App() {
     : OFFICIAL_HITSTER_DECK;
 
   useEffect(() => {
+    // Handle Spotify OAuth callback first
     const params = new URLSearchParams(window.location.search);
+    if (params.has('code')) {
+      import('./utils/spotifyAuth').then(({ handleSpotifyCallback }) => {
+        handleSpotifyCallback().then((success) => {
+          if (success) {
+            console.log('[App] Spotify OAuth login successful!');
+            // Open PlaylistStudio after successful auth
+            setShowPlaylistStudio(true);
+          }
+        });
+      });
+      return; // Don't process other params when handling OAuth
+    }
+
     const room = params.get('room');
     const mode = params.get('mode') as GameMode;
     const grid = parseInt(params.get('grid') || '4', 10) as GridSize;

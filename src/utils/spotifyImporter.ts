@@ -192,13 +192,15 @@ export function parseBatchTracksText(rawText: string): CustomTrack[] {
 
 export async function scrapeSpotifyPlaylistWithLiveLogs(
   playlistUrl: string,
-  onLog: (message: string, count: number) => void
+  onLog: (message: string, count: number) => void,
+  clientId?: string,
+  clientSecret?: string
 ): Promise<SpotifyImportResult | null> {
   try {
     const res = await fetch('/api/scrape-playlist-stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: playlistUrl })
+      body: JSON.stringify({ url: playlistUrl, clientId, clientSecret })
     });
 
     if (!res.ok || !res.body) {
