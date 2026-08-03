@@ -15,7 +15,7 @@
 
 const SPOTIFY_AUTH_URL = 'https://accounts.spotify.com/authorize';
 const SPOTIFY_TOKEN_URL = 'https://accounts.spotify.com/api/token';
-const SCOPES = 'playlist-read-private playlist-read-collaborative';
+const SCOPES = 'playlist-read-private playlist-read-collaborative user-library-read user-read-private';
 
 export function getRedirectUri(): string {
   // Always use exact origin without trailing slash (e.g. http://localhost:5173 or https://hitster-bingo-sandy.vercel.app)
@@ -366,6 +366,17 @@ export async function fetchPlaylistTracksWithOAuth(
     );
 
     offset += limit;
+  }
+
+  // Seamless Fallback: if API returned 0 tracks (e.g. 403 Dev Mode restrictions), try public embed
+  if (allTracks.length === 0) {
+    log('⚠️ API pagina beperkt (403). Publieke embed fallback gebruiken...');
+    const { fetchSpotifyPlaylistPublic } = await import('./spotifyImporter');
+    const pubResult = await fetchSpotifyPlaylistPublic(playlistUrl);
+    if (pubResult && pubResult.tracks.length > 0) {
+      log(`🎉 ${pubResult.tracks.length} nummers binnengehaald via publieke fallback!`, pubResult.tracks.length);
+      return { name: pubResult.name || playlistName, tracks: pubResult.tracks };
+    }
   }
 
   log(
