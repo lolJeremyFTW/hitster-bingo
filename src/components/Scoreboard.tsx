@@ -160,7 +160,9 @@ export const Scoreboard: React.FC<ScoreboardProps> = ({
                         <span className="font-black text-slate-200">
                           {p.marked}{' '}
                           <span className="text-slate-500 font-normal">
-                            {isNl ? 'vakjes' : 'squares'}
+                            {isNl
+                              ? (p.marked === 1 ? 'vakje' : 'vakjes')
+                              : (p.marked === 1 ? 'square' : 'squares')}
                           </span>
                         </span>
                       </>
@@ -172,7 +174,9 @@ export const Scoreboard: React.FC<ScoreboardProps> = ({
                         <span className="font-black text-slate-200">
                           {p.cards}{' '}
                           <span className="text-slate-500 font-normal">
-                            {isNl ? 'kaarten' : 'cards'}
+                            {isNl
+                              ? (p.cards === 1 ? 'kaart' : 'kaarten')
+                              : (p.cards === 1 ? 'card' : 'cards')}
                           </span>
                         </span>
                       </>
