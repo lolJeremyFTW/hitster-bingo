@@ -7,9 +7,9 @@ export interface SpotifyImportResult {
 
 /**
  * Extracts Spotify Playlist ID from various URL formats:
- * - https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M?si=...
- * - spotify:playlist:37i9dQZF1DXcBWIGoYBM5M
- * - 37i9dQZF1DXcBWIGoYBM5M
+ * - https://open.spotify.com/playlist/5zSKBda7QTnWMHecVs20E3?si=...
+ * - spotify:playlist:5zSKBda7QTnWMHecVs20E3
+ * - 5zSKBda7QTnWMHecVs20E3
  */
 export function extractSpotifyPlaylistId(urlOrId: string): string | null {
   const trimmed = urlOrId.trim();
@@ -24,78 +24,111 @@ export function extractSpotifyPlaylistId(urlOrId: string): string | null {
 }
 
 /**
- * Fetches playlist metadata using Spotify's public Embed API (No auth required!)
+ * Fetches Spotify playlist track metadata using multiple resilient fallback strategies:
+ * 1. Direct Spotify Embed API
+ * 2. AllOrigins CORS Proxy
+ * 3. Corsproxy.io
+ * 4. Spotify oEmbed API
  */
 export async function fetchSpotifyPlaylistPublic(playlistUrlOrId: string): Promise<SpotifyImportResult | null> {
   const playlistId = extractSpotifyPlaylistId(playlistUrlOrId);
   if (!playlistId) return null;
 
-  try {
-    // 1. Try Spotify oEmbed endpoint for playlist title
-    const oembedUrl = `https://open.spotify.com/oembed?url=https://open.spotify.com/playlist/${playlistId}`;
-    const res = await fetch(oembedUrl);
-    let playlistTitle = `Spotify Playlist (${playlistId.slice(0, 6)})`;
+  const embedUrl = `https://open.spotify.com/embed/playlist/${playlistId}`;
+  const proxySources = [
+    embedUrl,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(embedUrl)}`,
+    `https://corsproxy.io/?${encodeURIComponent(embedUrl)}`
+  ];
 
-    if (res.ok) {
-      const oembedData = await res.json();
+  let playlistTitle = 'Spotify Playlist';
+  let tracks: CustomTrack[] = [];
+
+  // Try each source URL until we get a valid HTML page containing Next.js or Embed state JSON
+  for (const targetUrl of proxySources) {
+    try {
+      const res = await fetch(targetUrl, {
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml',
+        }
+      });
+
+      if (!res.ok) continue;
+
+      const htmlText = await res.text();
+      if (!htmlText || htmlText.length < 500) continue;
+
+      // Extract JSON payload embedded inside Spotify iframe HTML
+      const jsonMatch = htmlText.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s) ||
+                        htmlText.match(/<script id="resource" type="application\/json">(.*?)<\/script>/s) ||
+                        htmlText.match(/<script id="initial-state" type="application\/json">(.*?)<\/script>/s);
+
+      if (jsonMatch && jsonMatch[1]) {
+        try {
+          const payload = JSON.parse(jsonMatch[1]);
+          const entity = payload?.props?.pageProps?.state?.data?.entity || payload?.entity || payload?.data?.entity;
+
+          if (entity) {
+            if (entity.name) playlistTitle = entity.name;
+
+            const rawItems = entity.trackList || entity.tracks?.items || [];
+            rawItems.forEach((item: any, idx: number) => {
+              const title = item.title || item.name || item.track?.name;
+              const artist = item.subtitle || (item.artists ? item.artists.map((a: any) => a.name).join(', ') : 'Unknown Artist');
+              const previewUrl = item.audioPreview?.url || item.preview_url || item.track?.preview_url;
+
+              let trackId = item.id || item.uid || `sp_${idx}_${Date.now()}`;
+              if (item.uri && item.uri.includes('spotify:track:')) {
+                trackId = item.uri.split('spotify:track:')[1];
+              }
+
+              // Extract or generate release year from track details
+              let year: number | undefined;
+              if (item.releaseDate) {
+                const yMatch = item.releaseDate.match(/\d{4}/);
+                if (yMatch) year = parseInt(yMatch[0], 10);
+              }
+
+              if (title) {
+                tracks.push({
+                  id: trackId,
+                  title: title.trim(),
+                  artist: artist ? artist.trim() : 'Unknown Artist',
+                  year,
+                  audioPreviewUrl: previewUrl || undefined,
+                  spotifyUrl: `https://open.spotify.com/track/${trackId}`
+                });
+              }
+            });
+
+            if (tracks.length > 0) {
+              return { name: playlistTitle, tracks };
+            }
+          }
+        } catch {
+          // JSON parsing failed, try next source
+        }
+      }
+    } catch {
+      // Network fetch error on this source, continue to next fallback
+    }
+  }
+
+  // 5. Ultimate Fallback: Fetch Spotify oEmbed endpoint for title
+  try {
+    const oembedUrl = `https://open.spotify.com/oembed?url=https://open.spotify.com/playlist/${playlistId}`;
+    const oembedRes = await fetch(oembedUrl);
+    if (oembedRes.ok) {
+      const oembedData = await oembedRes.json();
       if (oembedData.title) {
         playlistTitle = oembedData.title;
       }
     }
-
-    // 2. Fetch public iframe embed data which contains public track list details
-    const embedUrl = `https://open.spotify.com/embed/playlist/${playlistId}`;
-    const embedRes = await fetch(embedUrl);
-    const htmlText = await embedRes.text();
-
-    const tracks: CustomTrack[] = [];
-
-    // Extract JSON payload embedded inside Spotify iframe HTML (resource JSON data)
-    const jsonMatch = htmlText.match(/<script id="resource" type="application\/json">(.*?)<\/script>/s) ||
-                      htmlText.match(/<script id="initial-state" type="application\/json">(.*?)<\/script>/s);
-
-    if (jsonMatch && jsonMatch[1]) {
-      try {
-        const payload = JSON.parse(jsonMatch[1]);
-        // Extract tracks from Spotify embed resource schema
-        const trackItems = payload?.tracks?.items || payload?.entity?.tracks?.items || payload?.data?.playlist?.tracksV2?.items || [];
-
-        trackItems.forEach((item: any, idx: number) => {
-          const trackObj = item.track || item.item || item;
-          if (trackObj && trackObj.name) {
-            const artistNames = trackObj.artists ? trackObj.artists.map((a: any) => a.name).join(', ') : 'Unknown Artist';
-            const albumYearStr = trackObj.album?.release_date || trackObj.release_date;
-            let year: number | undefined;
-
-            if (albumYearStr) {
-              const yearMatch = albumYearStr.match(/\d{4}/);
-              if (yearMatch) {
-                year = parseInt(yearMatch[0], 10);
-              }
-            }
-
-            tracks.push({
-              id: `sp_${trackObj.id || idx}_${Date.now()}`,
-              title: trackObj.name,
-              artist: artistNames,
-              year,
-              spotifyUrl: trackObj.external_urls?.spotify || `https://open.spotify.com/track/${trackObj.id}`
-            });
-          }
-        });
-      } catch {
-        // Fallback parsing
-      }
-    }
-
-    return {
-      name: playlistTitle,
-      tracks
-    };
-  } catch (err) {
-    console.error('Spotify import error:', err);
-    return null;
+  } catch {
+    // Ignore
   }
+
+  return tracks.length > 0 ? { name: playlistTitle, tracks } : null;
 }
 
 /**

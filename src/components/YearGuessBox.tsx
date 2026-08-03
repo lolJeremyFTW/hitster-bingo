@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { Lock, Unlock, CheckCircle2, Target, Sparkles, RotateCcw } from 'lucide-react';
+import { Lock, CheckCircle2, Target, Sparkles, RotateCcw } from 'lucide-react';
 import type { Language } from '../types/hitster';
-import { getTranslation } from '../utils/translations';
 import { soundEffects } from '../utils/soundEffects';
 
 interface YearGuessBoxProps {
@@ -29,7 +28,6 @@ export const YearGuessBox: React.FC<YearGuessBoxProps> = ({ language, actualYear
 
   const isNl = language === 'nl';
 
-  // Calculate matching feedback if actual year is revealed
   let matchFeedback: { type: 'exact' | 'close' | 'decade' | 'miss'; message: string } | null = null;
   if (lockedGuess && actualYear) {
     const diff = Math.abs(lockedGuess - actualYear);

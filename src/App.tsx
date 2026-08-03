@@ -33,7 +33,6 @@ export function App() {
   const [hasWin, setHasWin] = useState(false);
   const [playerSeed] = useState(() => Math.floor(Math.random() * 10000));
 
-  // Custom Playlist Active Track Deck
   const [activePlaylist, setActivePlaylist] = useState<CustomPlaylist | null>(null);
 
   const [showVictory, setShowVictory] = useState(false);
@@ -41,6 +40,10 @@ export function App() {
   const [showPlaylistStudio, setShowPlaylistStudio] = useState(false);
   const [showScoreboard, setShowScoreboard] = useState(false);
   const [showQRShare, setShowQRShare] = useState(false);
+
+  const activeTrackDeck = activePlaylist && activePlaylist.tracks.length > 0
+    ? activePlaylist.tracks
+    : OFFICIAL_HITSTER_DECK;
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -62,11 +65,11 @@ export function App() {
     setRoomCode(code);
 
     const roomSeed = generateRoomSeed(code);
-    const initialTiles = generateBingoBoard(roomSeed, playerSeed, grid, mode, language);
+    const initialTiles = generateBingoBoard(roomSeed, playerSeed, grid, mode, language, true, activeTrackDeck);
     setTiles(initialTiles);
     setIsInGame(true);
 
-    const categories = getCategoriesForMode(mode);
+    const categories = getCategoriesForMode(mode, activeTrackDeck);
     if (categories.length > 0) {
       setActiveCategory(categories[0]);
     }
@@ -93,16 +96,12 @@ export function App() {
   const handleNewRound = () => {
     const nextSeed = Math.floor(Math.random() * 10000);
     const roomSeed = generateRoomSeed(roomCode);
-    const newTiles = generateBingoBoard(roomSeed, nextSeed, gridSize, gameMode, language);
+    const newTiles = generateBingoBoard(roomSeed, nextSeed, gridSize, gameMode, language, true, activeTrackDeck);
     setTiles(newTiles);
     setHasWin(false);
     setWinningIndices([]);
     setShowVictory(false);
   };
-
-  const activeTrackDeck = activePlaylist && activePlaylist.tracks.length > 0
-    ? activePlaylist.tracks
-    : OFFICIAL_HITSTER_DECK;
 
   const roomUrl = `${window.location.origin}${window.location.pathname}?room=${roomCode}&mode=${gameMode}&grid=${gridSize}`;
 
@@ -166,10 +165,9 @@ export function App() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Left Column: Disco Ball, Timer & Blind Audio Player */}
               <div className="space-y-6 lg:col-span-1">
                 <DiscoBallSpinner
-                  categories={getCategoriesForMode(gameMode)}
+                  categories={getCategoriesForMode(gameMode, activeTrackDeck)}
                   activeCategory={activeCategory}
                   onCategorySelected={setActiveCategory}
                   language={language}
@@ -181,7 +179,6 @@ export function App() {
                 <Timer25s language={language} />
               </div>
 
-              {/* Right Column: Player Bingo Grid */}
               <div className="lg:col-span-2">
                 <BingoGrid
                   tiles={tiles}
@@ -199,7 +196,7 @@ export function App() {
       </main>
 
       <footer className="py-4 text-center text-xs text-slate-500 z-10 border-t border-slate-900">
-        <p>Hitster Bingo Campfire Edition • Blind DJ Mode • Ready for Vercel ⛺🎶</p>
+        <p>Hitster Bingo Campfire Edition • Smart Playlist Optimizer • Ready for Vercel ⛺🎶</p>
       </footer>
 
       {showVictory && (
