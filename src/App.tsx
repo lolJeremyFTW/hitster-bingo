@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Navbar } from './components/Navbar';
 import { RoomLobby } from './components/RoomLobby';
 import { DiscoBallSpinner } from './components/DiscoBallSpinner';
@@ -42,6 +42,10 @@ export function App() {
 
   const [activePlaylist, setActivePlaylist] = useState<CustomPlaylist | null>(null);
 
+  // Gedeelde kamer: spelerslijst en spelstaat lopen hierlangs
+  const room = useRoom();
+  const [pendingJoinCode, setPendingJoinCode] = useState<string | null>(null);
+
   // Het nummer dat nu blind speelt. Woonde eerst alleen in BlindAudioPlayer,
   // waardoor het bingobord het jaartal nooit kreeg en de gok-feedback stil bleef.
   const [currentTrack, setCurrentTrack] = useState<CustomTrack | null>(null);
@@ -59,7 +63,61 @@ export function App() {
 
   // Klassieke tijdlijn-modus draait op een eigen spelstaat
   const [classicState, setClassicState] = useState<ClassicGameState | null>(null);
-  const [localPlayerId] = useState(() => `p_${Math.random().toString(36).slice(2, 9)}`);
+  const [fallbackPlayerId] = useState(() => `p_${Math.random().toString(36).slice(2, 9)}`);
+  /** Hoogste revisie die dit toestel al verwerkt heeft */
+  const appliedRev = useRef(0);
+  // Binnen een kamer is de speler-id uit de database leidend, zodat alle
+  // telefoons het over dezelfde spelers hebben
+  const localPlayerId = room.myPlayerId ?? fallbackPlayerId;
+
+  /**
+   * Elke zet in de klassieke modus gaat hierlangs: lokaal toepassen, revisie
+   * ophogen en meteen naar de kamer schrijven. De andere telefoons krijgen het
+   * via realtime binnen.
+   */
+  const updateClassic = useCallback(
+    (updater: (prev: ClassicGameState) => ClassicGameState) => {
+      setClassicState(prev => {
+        if (!prev) return prev;
+        const next = { ...updater(prev), rev: prev.rev + 1 };
+        appliedRev.current = next.rev;
+        if (room.roomCode) room.updateSharedState(next);
+        return next;
+      });
+    },
+    [room]
+  );
+
+  // Zetten van andere spelers binnentrekken. De revisie voorkomt dat de echo
+  // van je eigen schrijfactie opnieuw wordt toegepast.
+  useEffect(() => {
+    const incoming = room.sharedState as ClassicGameState | null;
+    if (!incoming || typeof incoming.rev !== 'number') return;
+    if (incoming.rev <= appliedRev.current) return;
+    appliedRev.current = incoming.rev;
+    setClassicState(incoming);
+  }, [room.sharedState]);
+
+  // Spelers uit de lobby overnemen in de partij, met behoud van wat ze al
+  // hebben gewonnen. Wie de kamer verlaat verdwijnt ook uit het spel.
+  useEffect(() => {
+    if (!isInGame || gameMode !== 'classic' || room.players.length === 0) return;
+
+    setClassicState(prev => {
+      if (!prev) return prev;
+      const bestaand = new Map(prev.players.map(p => [p.id, p]));
+      const samen = room.players.map(rp =>
+        bestaand.get(rp.id) ?? createPlayer(rp.id, rp.name, rp.isHost)
+      );
+
+      const zelfde =
+        samen.length === prev.players.length &&
+        samen.every((p, i) => p.id === prev.players[i].id);
+      if (zelfde) return prev;
+
+      return { ...prev, players: samen };
+    });
+  }, [room.players, isInGame, gameMode]);
 
   const isClassicMode = gameMode === 'classic';
   const isHitsterMode = gameMode === 'sideA' || gameMode === 'sideB';
@@ -67,10 +125,6 @@ export function App() {
   const activeHitsterCategory = activeColor
     ? hitsterCategories.find(c => c.color === activeColor)
     : undefined;
-
-  // Gedeelde kamer: spelerslijst en spelstaat lopen hierlangs
-  const room = useRoom();
-  const [pendingJoinCode, setPendingJoinCode] = useState<string | null>(null);
 
   const [showVictory, setShowVictory] = useState(false);
   const [showRules, setShowRules] = useState(false);
@@ -146,8 +200,9 @@ export function App() {
     }
 
     // Host opent de kamer, zodat anderen via de QR-code kunnen binnenkomen
-    // Alleen de host opent de kamer; een joiner is al via joinRoom binnen
-    if (!room.roomCode && !room.myPlayerId) {
+    // Alleen de host opent de kamer. Zitten we al in déze kamer, dan kwamen we
+    // via joinRoom binnen en hoeft er niets aangemaakt te worden.
+    if (room.roomCode !== code) {
       room.createRoom(code, mode, 'Host');
     }
 
@@ -247,7 +302,7 @@ export function App() {
         <div className="flex-1 overflow-y-auto p-1.5 sm:p-3">
           <ClassicGame
             state={classicState}
-            setState={(updater) => setClassicState(prev => (prev ? updater(prev) : prev))}
+            setState={updateClassic}
             tracks={activeTrackDeck}
             language={language}
             localPlayerId={localPlayerId}
@@ -369,7 +424,7 @@ export function App() {
             {isClassicMode && classicState ? (
               <ClassicGame
                 state={classicState}
-                setState={(updater) => setClassicState(prev => (prev ? updater(prev) : prev))}
+                setState={updateClassic}
                 tracks={activeTrackDeck}
                 language={language}
                 localPlayerId={localPlayerId}

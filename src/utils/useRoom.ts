@@ -51,9 +51,10 @@ export function useRoom(): UseRoomResult {
   const [error, setError] = useState<string | null>(null);
   const [roomCode, setRoomCode] = useState<string | null>(null);
   const [players, setPlayers] = useState<RoomPlayer[]>([]);
-  const [myPlayerId, setMyPlayerId] = useState<string | null>(
-    () => sessionStorage.getItem(PLAYER_ID_KEY)
-  );
+  // Bewust niet uit sessionStorage voorladen: die id hoort bij een kamer uit
+  // een eerdere sessie, die allang opgeruimd kan zijn. Een herladen speler
+  // hoort gewoon opnieuw te joinen.
+  const [myPlayerId, setMyPlayerId] = useState<string | null>(null);
   const [isHost, setIsHost] = useState(false);
   const [sharedState, setSharedState] = useState<Record<string, unknown> | null>(null);
 

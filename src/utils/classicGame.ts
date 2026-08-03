@@ -48,6 +48,12 @@ export type TurnPhase =
   | 'revealed';
 
 export interface ClassicGameState {
+  /**
+   * Loopt op bij elke zet. Wordt gebruikt om te bepalen of een binnenkomende
+   * staat nieuwer is dan wat dit toestel al heeft, zodat een echo van je eigen
+   * schrijfactie niet opnieuw wordt toegepast.
+   */
+  rev: number;
   players: ClassicPlayer[];
   activePlayerIndex: number;
   phase: TurnPhase;
@@ -70,6 +76,7 @@ export function createPlayer(id: string, name: string, isHost = false): ClassicP
 
 export function createInitialState(players: ClassicPlayer[]): ClassicGameState {
   return {
+    rev: 0,
     players,
     activePlayerIndex: 0,
     phase: 'listening',
