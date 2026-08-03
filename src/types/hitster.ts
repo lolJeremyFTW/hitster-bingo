@@ -1,4 +1,4 @@
-export type GameMode = 'sideA' | 'sideB' | 'custom' | 'campfire';
+export type GameMode = 'sideA' | 'sideB' | 'custom' | 'campfire' | 'classic';
 
 export type GridSize = 3 | 4 | 5;
 

@@ -4,6 +4,8 @@ import { RoomLobby } from './components/RoomLobby';
 import { DiscoBallSpinner } from './components/DiscoBallSpinner';
 import { HitsterDiscoBall } from './components/HitsterDiscoBall';
 import { AnswerBox } from './components/AnswerBox';
+import { ClassicGame } from './components/ClassicGame';
+import { createInitialState, createPlayer, type ClassicGameState } from './utils/classicGame';
 import { Timer25s } from './components/Timer25s';
 import { BingoGrid } from './components/BingoGrid';
 import { VictoryModal } from './components/VictoryModal';
@@ -53,6 +55,11 @@ export function App() {
   // verdict-callback bevestigt "goed" opnieuw bij elke render.
   const [hasMarkedThisRound, setHasMarkedThisRound] = useState(false);
 
+  // Klassieke tijdlijn-modus draait op een eigen spelstaat
+  const [classicState, setClassicState] = useState<ClassicGameState | null>(null);
+  const [localPlayerId] = useState(() => `p_${Math.random().toString(36).slice(2, 9)}`);
+
+  const isClassicMode = gameMode === 'classic';
   const isHitsterMode = gameMode === 'sideA' || gameMode === 'sideB';
   const hitsterCategories = getHitsterCategories(gameMode);
   const activeHitsterCategory = activeColor
@@ -113,6 +120,14 @@ export function App() {
     setIsInGame(true);
     setActiveColor(undefined);
     setAnswerWasCorrect(false);
+
+    if (mode === 'classic') {
+      // Zolang de lobby nog niet via Supabase loopt, start je met jezelf; de
+      // spelstaat heeft al de vorm die straks gedeeld wordt.
+      setClassicState(createInitialState([
+        createPlayer(localPlayerId, language === 'nl' ? 'Jij' : 'You', true),
+      ]));
+    }
 
     if (!useHitsterRules) {
       const categories = getCategoriesForMode(mode, activeTrackDeck);
@@ -228,6 +243,15 @@ export function App() {
               </div>
             </div>
 
+            {isClassicMode && classicState ? (
+              <ClassicGame
+                state={classicState}
+                setState={(updater) => setClassicState(prev => (prev ? updater(prev) : prev))}
+                tracks={activeTrackDeck}
+                language={language}
+                localPlayerId={localPlayerId}
+              />
+            ) : (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="space-y-6 lg:col-span-1">
                 {isHitsterMode ? (
@@ -292,6 +316,7 @@ export function App() {
                 />
               </div>
             </div>
+            )}
           </div>
         )}
       </main>

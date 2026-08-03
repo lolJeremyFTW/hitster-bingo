@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { Sparkles, QrCode, Play, Users, Copy, Check, Grid, Flame, Music } from 'lucide-react';
+import { Sparkles, QrCode, Play, Users, Copy, Check, Grid, Flame, Music, ListOrdered } from 'lucide-react';
 import type { GameMode, GridSize, Language } from '../types/hitster';
 import { getTranslation } from '../utils/translations';
 
@@ -144,6 +144,25 @@ export const RoomLobby: React.FC<RoomLobbyProps> = ({
               </div>
               <p className="text-[11px] text-slate-400 mt-1">
                 {language === 'nl' ? 'Maak/beheer je eigen afspeellijst' : 'Create & manage custom playlists'}
+              </p>
+            </button>
+
+            <button
+              onClick={() => setMode('classic')}
+              className={`p-3 rounded-2xl border text-left transition-all sm:col-span-2 ${
+                mode === 'classic'
+                  ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200 shadow-md shadow-emerald-500/20'
+                  : 'bg-slate-950/70 border-slate-800 text-slate-400 hover:border-slate-700'
+              }`}
+            >
+              <div className="font-extrabold text-sm flex items-center gap-1.5">
+                <ListOrdered className="w-4 h-4 text-emerald-400" />
+                <span>{language === 'nl' ? 'Klassieke Hitster (tijdlijn)' : 'Classic Hitster (timeline)'}</span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1">
+                {language === 'nl'
+                  ? 'Kaarten op volgorde van jaartal leggen, munten verdienen en stelen. Eerste met 10 kaarten wint. Houd je telefoon horizontaal.'
+                  : 'Place cards in year order, earn tokens and steal. First to 10 cards wins. Hold your phone sideways.'}
               </p>
             </button>
           </div>
