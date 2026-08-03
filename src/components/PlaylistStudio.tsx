@@ -4,7 +4,8 @@ import type { CustomPlaylist, CustomTrack, Language } from '../types/hitster';
 import { getTranslation } from '../utils/translations';
 import { parseBatchTracksText, fetchSpotifyPlaylistPublic, resolveTrackUrlsWithOEmbed, autoEnrichTracks } from '../utils/spotifyImporter';
 import { resolveOriginalYears } from '../utils/yearResolver';
-import { initiateSpotifyLogin, isSpotifyAuthenticated, getStoredClientId, logoutSpotify, fetchPlaylistTracksWithOAuth, getRedirectUri, isLocalhostOrigin, fetchSpotifyProfile, matchTracksToSpotify } from '../utils/spotifyAuth';
+import { findHitsterPlaylists, type FoundPlaylist } from '../data/hitsterEditions';
+import { initiateSpotifyLogin, isSpotifyAuthenticated, getStoredClientId, logoutSpotify, fetchPlaylistTracksWithOAuth, getRedirectUri, isLocalhostOrigin, fetchSpotifyProfile, matchTracksToSpotify, getValidAccessToken } from '../utils/spotifyAuth';
 
 interface PlaylistStudioProps {
   language: Language;
@@ -46,6 +47,35 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
   const [spotifyProfile, setSpotifyProfile] = useState<{ displayName: string; isPremium: boolean } | null>(null);
   // MusicBrainz mag maar 1 request per seconde — bij grote lijsten wil je kunnen stoppen
   const cancelEnrichRef = useRef(false);
+
+  // Officiële Hitster-edities, live opgezocht bij Spotify
+  const [editions, setEditions] = useState<FoundPlaylist[] | null>(null);
+  const [isSearchingEditions, setIsSearchingEditions] = useState(false);
+
+  const handleFindEditions = async () => {
+    setIsSearchingEditions(true);
+    setSpotifyError(null);
+    setCrawlerLogs(['🔎 Officiële Hitster-edities zoeken op Spotify…']);
+    try {
+      const token = await getValidAccessToken();
+      if (!token) {
+        setSpotifyError(
+          language === 'nl'
+            ? '🔑 Log eerst in met Spotify om de officiële edities op te zoeken.'
+            : '🔑 Log in with Spotify first to look up the official editions.'
+        );
+        setIsSearchingEditions(false);
+        return;
+      }
+      const found = await findHitsterPlaylists(token, (msg) => {
+        setCrawlerLogs(prev => [...prev.slice(-30), msg]);
+      });
+      setEditions(found);
+    } catch (err: any) {
+      setSpotifyError(`❌ ${err.message}`);
+    }
+    setIsSearchingEditions(false);
+  };
 
   const [batchText, setBatchText] = useState('');
 
@@ -590,6 +620,64 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
                 </button>
               )}
             </div>
+
+            {/* Kant-en-klare officiële edities */}
+            {isLoggedIn && (
+              <div className="p-3 rounded-xl bg-slate-900 border border-purple-500/25 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-bold text-purple-300">
+                    {isNl ? 'Officiële Hitster-edities' : 'Official Hitster editions'}
+                  </span>
+                  <button
+                    onClick={handleFindEditions}
+                    disabled={isSearchingEditions}
+                    className="px-2.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white font-bold text-[11px] flex items-center gap-1.5"
+                  >
+                    {isSearchingEditions
+                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      : <Layers className="w-3.5 h-3.5" />}
+                    <span>{isSearchingEditions ? (isNl ? 'Zoeken…' : 'Searching…') : (isNl ? 'Zoek edities' : 'Find editions')}</span>
+                  </button>
+                </div>
+
+                {editions === null ? (
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    {isNl
+                      ? 'Zoekt de echte playlists van Hitster op Spotify op. Ze worden live opgezocht, niet uit een vaste lijst gehaald, zodat je nooit een dode link krijgt.'
+                      : 'Looks up the real Hitster playlists on Spotify, live rather than from a fixed list.'}
+                  </p>
+                ) : editions.length === 0 ? (
+                  <p className="text-[11px] text-amber-300 leading-relaxed">
+                    {isNl
+                      ? 'Geen officiële lijsten gevonden. Mogelijk zijn ze niet publiek doorzoekbaar met een app in Development Mode — plak dan gewoon de playlist-link hierboven.'
+                      : 'No official lists found. Paste a playlist link above instead.'}
+                  </p>
+                ) : (
+                  <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+                    {editions.map(ed => (
+                      <button
+                        key={ed.playlistId}
+                        onClick={() => {
+                          setSpotifyUrlInput(ed.url);
+                          setCrawlerLogs([`🎵 "${ed.playlistName}" gekozen — klik op "Alles + afspeelbaar".`]);
+                        }}
+                        className="w-full flex items-center gap-2 p-2 rounded-lg bg-slate-950 border border-slate-800 hover:border-purple-400 text-left transition-colors"
+                      >
+                        <span className="text-base shrink-0">{ed.emoji}</span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-[11px] font-bold text-slate-100 truncate">
+                            {ed.playlistName}
+                          </span>
+                          <span className="block text-[10px] text-slate-500 truncate">
+                            {ed.trackCount} {isNl ? 'nummers' : 'tracks'} · {ed.owner}
+                          </span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* OAuth Setup — collapsible, only if not logged in */}
             {!isLoggedIn && (
