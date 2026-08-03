@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Music, Plus, Trash2, Download, Upload, Save, Check, Disc, ExternalLink, Link as LinkIcon, FileText, Loader2, Sparkles, Layers, Key, ChevronDown, ChevronUp } from 'lucide-react';
+import { Music, Plus, Trash2, Download, Upload, Save, Check, Disc, ExternalLink, Link as LinkIcon, FileText, Loader2, Sparkles, Layers, Key, ChevronDown, ChevronUp, Bot } from 'lucide-react';
 import type { CustomPlaylist, CustomTrack, Language } from '../types/hitster';
 import { getTranslation } from '../utils/translations';
-import { fetchAllTracksFromSpotifyAPI, fetchSpotifyPlaylistPublic, extractSpotifyPlaylistId, parseBatchTracksText } from '../utils/spotifyImporter';
+import { fetchAllTracksFromSpotifyAPI, fetchSpotifyPlaylistPublic, scrapeSpotifyPlaylistLocalAPI, extractSpotifyPlaylistId, parseBatchTracksText } from '../utils/spotifyImporter';
 
 interface PlaylistStudioProps {
   language: Language;
@@ -31,21 +31,18 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
     ]
   });
 
-  // Spotify Import State
   const [spotifyUrl, setSpotifyUrlInput] = useState('');
   const [isImportingSpotify, setIsImportingSpotify] = useState(false);
+  const [isScrapingLocal, setIsScrapingLocal] = useState(false);
   const [spotifyError, setSpotifyError] = useState<string | null>(null);
   const [importedCountInfo, setImportedCountInfo] = useState<string | null>(null);
 
-  // Spotify API Keys (Optional for 800+ full import)
   const [showApiKeys, setShowApiKeys] = useState(false);
   const [spotifyClientId, setSpotifyClientId] = useState(() => localStorage.getItem('hitster_sp_client_id') || '');
   const [spotifyClientSecret, setSpotifyClientSecret] = useState(() => localStorage.getItem('hitster_sp_client_secret') || '');
 
-  // Batch Text State
   const [batchText, setBatchText] = useState('');
 
-  // Single Track Inputs
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
   const [year, setYear] = useState('');
@@ -67,7 +64,6 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
     }
   }, []);
 
-  // 1. Spotify Link Importer (Supports 800+ full API fetch & public embed fallback)
   const handleImportSpotify = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!spotifyUrl.trim()) return;
@@ -85,16 +81,12 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
 
     let result = null;
 
-    // Save Client ID / Secret if provided
     if (spotifyClientId.trim() && spotifyClientSecret.trim()) {
       localStorage.setItem('hitster_sp_client_id', spotifyClientId.trim());
       localStorage.setItem('hitster_sp_client_secret', spotifyClientSecret.trim());
-
-      // Attempt full 800+ Spotify API fetch
       result = await fetchAllTracksFromSpotifyAPI(playlistId, spotifyClientId, spotifyClientSecret);
     }
 
-    // Fallback to public embed fetch if API keys not provided or API call returned null
     if (!result || result.tracks.length === 0) {
       result = await fetchSpotifyPlaylistPublic(spotifyUrl);
     }
@@ -123,6 +115,42 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
         language === 'nl'
           ? 'Kon geen nummers ophalen. Controleer of de Spotify afspeellijst openbaar is.'
           : 'Could not fetch tracks. Please check if the Spotify playlist is public.'
+      );
+    }
+  };
+
+  const handleRunLocalScraper = async () => {
+    if (!spotifyUrl.trim()) return;
+
+    setIsScrapingLocal(true);
+    setSpotifyError(null);
+    setImportedCountInfo(null);
+
+    const scraped = await scrapeSpotifyPlaylistLocalAPI(spotifyUrl);
+    setIsScrapingLocal(false);
+
+    if (scraped && scraped.tracks.length > 0) {
+      const newPlaylist: CustomPlaylist = {
+        id: `scraped_${Date.now()}`,
+        name: scraped.name || 'Gecrawlde Playlist',
+        description: `Ingebouwde crawler (${scraped.tracks.length} nummers)`,
+        createdAt: new Date().toISOString(),
+        tracks: scraped.tracks
+      };
+
+      setActivePlaylist(newPlaylist);
+      setSpotifyUrlInput('');
+      setActiveTab('single');
+      setImportedCountInfo(
+        language === 'nl'
+          ? `🤖 Ingebouwde Scraper: ${scraped.tracks.length} nummers gecrawld uit "${scraped.name}"!`
+          : `🤖 Built-in Scraper: ${scraped.tracks.length} tracks crawled from "${scraped.name}"!`
+      );
+    } else {
+      setSpotifyError(
+        language === 'nl'
+          ? 'Ingebouwde scraper kon de afspeellijst niet scrolen. Gebruik optie "Plak Tekstlijst" of API sleutel.'
+          : 'Built-in scraper could not scroll the playlist.'
       );
     }
   };
@@ -228,8 +256,8 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
               </h2>
               <p className="text-xs text-slate-400">
                 {isNl
-                  ? 'Importeer direct jouw Spotify afspeellijst (ondersteunt 800+ nummers!)'
-                  : 'Import your Spotify playlist directly (supports 800+ tracks!)'}
+                  ? 'Importeer jouw Spotify afspeellijst met ingebouwde crawler!'
+                  : 'Import your Spotify playlist with built-in crawler!'}
               </p>
             </div>
           </div>
@@ -252,7 +280,7 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
             }`}
           >
             <LinkIcon className="w-3.5 h-3.5" />
-            <span>Spotify Link (800+)</span>
+            <span>Spotify Link & Crawler</span>
           </button>
 
           <button
@@ -280,28 +308,31 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
           </button>
         </div>
 
-        {/* 1. Spotify URL Import Form */}
+        {/* 1. Spotify URL Import & Built-in Crawler */}
         {activeTab === 'spotify' && (
-          <form onSubmit={handleImportSpotify} className="bg-slate-950/90 p-4 rounded-2xl border border-green-500/30 mb-5 space-y-3">
+          <div className="bg-slate-950/90 p-4 rounded-2xl border border-green-500/30 mb-5 space-y-3">
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-green-400 animate-pulse" />
               <h3 className="text-xs font-extrabold uppercase tracking-wider text-green-300">
                 Plak je Spotify Afspeellijst Link:
               </h3>
             </div>
-            <div className="flex gap-2">
-              <input
-                type="url"
-                required
-                value={spotifyUrl}
-                onChange={(e) => setSpotifyUrlInput(e.target.value)}
-                placeholder="https://open.spotify.com/playlist/5zSKBda7QTnWMHecVs20E3"
-                className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-green-500 font-mono"
-              />
+
+            <input
+              type="url"
+              required
+              value={spotifyUrl}
+              onChange={(e) => setSpotifyUrlInput(e.target.value)}
+              placeholder="https://open.spotify.com/playlist/5zSKBda7QTnWMHecVs20E3"
+              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-green-500 font-mono"
+            />
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <button
-                type="submit"
-                disabled={isImportingSpotify || !spotifyUrl.trim()}
-                className="px-5 py-2.5 rounded-xl bg-green-600 text-white font-extrabold text-xs uppercase tracking-wider hover:bg-green-500 disabled:opacity-40 transition-colors flex items-center gap-1.5 shadow-lg shadow-green-600/20"
+                type="button"
+                onClick={handleImportSpotify}
+                disabled={isImportingSpotify || isScrapingLocal || !spotifyUrl.trim()}
+                className="py-2.5 px-4 rounded-xl bg-green-600 text-white font-extrabold text-xs uppercase tracking-wider hover:bg-green-500 disabled:opacity-40 transition-colors flex items-center justify-center gap-1.5 shadow-lg shadow-green-600/20"
               >
                 {isImportingSpotify ? (
                   <>
@@ -311,13 +342,32 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4" />
-                    <span>Importeren</span>
+                    <span>Snel Importeren</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleRunLocalScraper}
+                disabled={isImportingSpotify || isScrapingLocal || !spotifyUrl.trim()}
+                className="py-2.5 px-4 rounded-xl bg-purple-600 text-white font-extrabold text-xs uppercase tracking-wider hover:bg-purple-500 disabled:opacity-40 transition-colors flex items-center justify-center gap-1.5 shadow-lg shadow-purple-600/20"
+              >
+                {isScrapingLocal ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Ingebouwde Crawler Loopt...</span>
+                  </>
+                ) : (
+                  <>
+                    <Bot className="w-4 h-4 text-purple-300" />
+                    <span>🤖 Ingebouwde Scraper</span>
                   </>
                 )}
               </button>
             </div>
 
-            {/* Expandable Free Spotify API Keys Section for 800+ Full Unlimited Fetch */}
+            {/* Expandable Spotify API Keys */}
             <div className="pt-2 border-t border-slate-900">
               <button
                 type="button"
@@ -326,7 +376,7 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
               >
                 <Key className="w-3 h-3 text-green-400" />
                 <span>
-                  {isNl ? '🔑 Spotify API Sleutel (Voor álle 800+ nummers tegelijk in 1 klik)' : '🔑 Spotify API Key (For all 800+ tracks)'}
+                  {isNl ? '🔑 Spotify API Sleutel (Voor officiële API 800+ import)' : '🔑 Spotify API Key'}
                 </span>
                 {showApiKeys ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
               </button>
@@ -335,7 +385,7 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
                 <div className="mt-2.5 p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2 animate-fade-in text-xs">
                   <p className="text-[11px] text-slate-300">
                     {isNl
-                      ? 'Standaard laadt Spotify via de web-embed de top 100 nummers. Vul gratis 1-keer je Spotify Developer Client ID & Secret in om álle 800+ nummers tegelijk op te halen (gratis aan te maken op developer.spotify.com):'
+                      ? 'Vul optioneel 1-keer je gratis Spotify Developer Client ID & Secret in om via de officiële API álle 800+ nummers tegelijk op te halen:'
                       : 'Enter your Spotify Developer Client ID & Secret to page through all 800+ tracks at once:'}
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -364,7 +414,7 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
             {importedCountInfo && (
               <p className="text-xs text-green-300 font-bold">{importedCountInfo}</p>
             )}
-          </form>
+          </div>
         )}
 
         {/* 2. Batch Text Paste Form */}
@@ -460,7 +510,7 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
           <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-1 flex items-center justify-between">
             <span>Nummers in afspeellijst ({activePlaylist.tracks.length}):</span>
             {activePlaylist.tracks.length >= 100 && (
-              <span className="text-purple-400">⚡ Grote Deck ({activePlaylist.tracks.length} nummers)</span>
+              <span className="text-purple-400 font-extrabold">⚡ Grote Deck ({activePlaylist.tracks.length} nummers)</span>
             )}
           </div>
           {activePlaylist.tracks.length === 0 ? (

@@ -7,10 +7,7 @@ export interface SpotifyImportResult {
 }
 
 /**
- * Extracts Spotify Playlist ID from various URL formats:
- * - https://open.spotify.com/playlist/5zSKBda7QTnWMHecVs20E3?si=...
- * - spotify:playlist:5zSKBda7QTnWMHecVs20E3
- * - 5zSKBda7QTnWMHecVs20E3
+ * Extracts Spotify Playlist ID from various URL formats
  */
 export function extractSpotifyPlaylistId(urlOrId: string): string | null {
   const trimmed = urlOrId.trim();
@@ -25,7 +22,34 @@ export function extractSpotifyPlaylistId(urlOrId: string): string | null {
 }
 
 /**
- * Fetches ALL 800+ tracks directly from Spotify's Official Web API using Client Credentials!
+ * Call Built-in Local Scraper API (/api/scrape-playlist) if available
+ */
+export async function scrapeSpotifyPlaylistLocalAPI(playlistUrl: string): Promise<SpotifyImportResult | null> {
+  try {
+    const res = await fetch('/api/scrape-playlist', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: playlistUrl })
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.tracks && data.tracks.length > 0) {
+        return {
+          name: data.name || 'Spotify Playlist',
+          tracks: data.tracks,
+          totalTracksInPlaylist: data.tracks.length
+        };
+      }
+    }
+  } catch (e) {
+    // Local API not available (e.g. static production deployment)
+  }
+  return null;
+}
+
+/**
+ * Fetches ALL 800+ tracks directly from Spotify's Official Web API using Client Credentials
  */
 export async function fetchAllTracksFromSpotifyAPI(
   playlistId: string,
@@ -33,7 +57,6 @@ export async function fetchAllTracksFromSpotifyAPI(
   clientSecret: string
 ): Promise<SpotifyImportResult | null> {
   try {
-    // 1. Get Access Token via Spotify Client Credentials Flow
     const bodyParams = new URLSearchParams();
     bodyParams.append('grant_type', 'client_credentials');
 
@@ -52,7 +75,6 @@ export async function fetchAllTracksFromSpotifyAPI(
     const accessToken = tokenData.access_token;
     if (!accessToken) return null;
 
-    // 2. Fetch Playlist Details
     const playlistDetailsRes = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}`, {
       headers: { 'Authorization': `Bearer ${accessToken}` }
     });
@@ -63,13 +85,12 @@ export async function fetchAllTracksFromSpotifyAPI(
       if (details.name) playlistTitle = details.name;
     }
 
-    // 3. Page through ALL tracks (offset 0, 100, 200, 300...)
     let offset = 0;
     const limit = 100;
     let allTracks: CustomTrack[] = [];
     let totalPlaylistCount = 0;
 
-    while (offset < 2000) { // Support up to 2000 tracks per playlist!
+    while (offset < 2000) {
       const tracksRes = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=${limit}&offset=${offset}`, {
         headers: { 'Authorization': `Bearer ${accessToken}` }
       });
@@ -122,7 +143,7 @@ export async function fetchAllTracksFromSpotifyAPI(
 }
 
 /**
- * Public Embed Fallback Importer (fetches initial batch of tracks without credentials)
+ * Public Embed Fallback Importer
  */
 export async function fetchSpotifyPlaylistPublic(playlistUrlOrId: string): Promise<SpotifyImportResult | null> {
   const playlistId = extractSpotifyPlaylistId(playlistUrlOrId);
@@ -205,25 +226,11 @@ export async function fetchSpotifyPlaylistPublic(playlistUrlOrId: string): Promi
     }
   }
 
-  // Fallback oEmbed for title
-  try {
-    const oembedUrl = `https://open.spotify.com/oembed?url=https://open.spotify.com/playlist/${playlistId}`;
-    const oembedRes = await fetch(oembedUrl);
-    if (oembedRes.ok) {
-      const oembedData = await oembedRes.json();
-      if (oembedData.title) {
-        playlistTitle = oembedData.title;
-      }
-    }
-  } catch {
-    // Ignore
-  }
-
   return tracks.length > 0 ? { name: playlistTitle, tracks } : null;
 }
 
 /**
- * Parses batch text (e.g. copied track lists from Spotify, text files, or Spotify web paste)
+ * Parses batch text
  */
 export function parseBatchTracksText(rawText: string): CustomTrack[] {
   const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
