@@ -49,18 +49,20 @@ export const ClassicTimeline: React.FC<ClassicTimelineProps> = ({
     const marker = stealMarkers.find(s => s.position === position);
     const isCorrect = isRevealed && correctPositions.includes(position);
     const isChosen = placedPosition === position;
+    // Posities voorbij het einde bestaan alleen als opvulling, niet als keuze
+    const inRange = position <= player.timeline.length;
+    const canPlaceHere = canPlace && inRange;
 
-    if (!canPlace && !marker && !isChosen && !(isRevealed && isCorrect)) {
-      return <div key={`slot-${position}`} className="w-1.5 shrink-0" />;
-    }
-
+    // Vaste breedte, altijd. Een smallere of ontbrekende plek laat de kaarten
+    // ernaast uitrekken, waardoor rij 1 en rij 2 niet meer even breed zijn.
     return (
       <button
         key={`slot-${position}`}
-        onClick={() => canPlace && onPlace?.(position)}
-        disabled={!canPlace}
-        className={`shrink-0 h-full rounded-lg border-2 border-dashed transition-all flex flex-col items-center justify-center gap-0.5 ${
-          canPlace ? 'w-9 sm:w-11 cursor-pointer' : 'w-7 sm:w-9'
+        onClick={() => canPlaceHere && onPlace?.(position)}
+        disabled={!canPlaceHere}
+        aria-hidden={!canPlaceHere && !marker && !isChosen && !isCorrect}
+        className={`shrink-0 h-full w-7 sm:w-9 rounded-lg border-2 border-dashed transition-all flex flex-col items-center justify-center gap-0.5 ${
+          canPlaceHere ? 'cursor-pointer' : ''
         } ${
           isChosen
             ? 'border-amber-400 bg-amber-500/25'
@@ -68,7 +70,7 @@ export const ClassicTimeline: React.FC<ClassicTimelineProps> = ({
             ? 'border-green-400 bg-green-500/20'
             : marker
             ? 'border-red-400 bg-red-500/20'
-            : canPlace
+            : canPlaceHere
             ? 'border-slate-600 hover:border-amber-400 hover:bg-amber-500/15'
             : 'border-transparent'
         }`}
@@ -76,7 +78,7 @@ export const ClassicTimeline: React.FC<ClassicTimelineProps> = ({
       >
         {marker ? (
           <Coins className="w-3.5 h-3.5 text-red-300" />
-        ) : canPlace ? (
+        ) : canPlaceHere ? (
           <Plus className="w-3.5 h-3.5 text-slate-400" />
         ) : null}
         {marker && (
@@ -115,9 +117,13 @@ export const ClassicTimeline: React.FC<ClassicTimelineProps> = ({
           // Op een liggende telefoon is de hóógte krap, niet de breedte —
           // dus sturen op max-height in plaats van op sm:/lg:
           return (
+            // Grid in plaats van flex: bij flex verdeelde de browser de rest-
+            // ruimte per rij nét anders, waardoor rij 2 bredere kaarten kreeg.
+            // Met een vast kolompatroon zijn alle 1fr-kolommen exact gelijk.
             <div
               key={rowIdx}
-              className="flex items-stretch gap-0.5 h-20 lg:h-24 [@media(max-height:480px)]:h-[3.25rem]"
+              className="grid items-stretch gap-0.5 h-20 lg:h-24 [@media(max-height:480px)]:h-[3.25rem]"
+              style={{ gridTemplateColumns: 'repeat(5, auto minmax(0, 1fr)) auto' }}
             >
               {/* Altijd vijf even brede cellen, ook als de rij half vol is —
                   anders rekt één kaart uit over de hele breedte */}
@@ -126,12 +132,12 @@ export const ClassicTimeline: React.FC<ClassicTimelineProps> = ({
                 const position = offset + i;
 
                 if (!card) {
-                  // Alleen de eerstvolgende lege plek is een echte invoegplek
-                  const isNextSlot = position === player.timeline.length;
+                  // Ook lege cellen krijgen een plek ervoor: alleen dan houden
+                  // beide rijen precies evenveel ruimte over voor de kaarten
                   return (
                     <React.Fragment key={`empty-${position}`}>
-                      {isNextSlot && renderSlot(position)}
-                      <div className="flex-1 basis-0 min-w-0 rounded-lg border border-dashed border-slate-800/60" />
+                      {renderSlot(position)}
+                      <div className="min-w-0 rounded-lg border border-dashed border-slate-800/60" />
                     </React.Fragment>
                   );
                 }
@@ -141,22 +147,26 @@ export const ClassicTimeline: React.FC<ClassicTimelineProps> = ({
                   // tijdlijn belanden en dan botsen de keys
                   <React.Fragment key={`${card.trackId}-${position}`}>
                     {renderSlot(position)}
-                    <div className="flex-1 basis-0 min-w-0 rounded-lg bg-gradient-to-b from-slate-800 to-slate-900 border border-slate-700 p-1 flex flex-col items-center justify-center text-center shadow">
+                    {/* overflow-hidden + break-words: zonder dat duwt een lange
+                        titel zijn cel breder dan de andere en lopen de rijen
+                        uit de pas */}
+                    <div className="min-w-0 overflow-hidden rounded-lg bg-gradient-to-b from-slate-800 to-slate-900 border border-slate-700 p-1 flex flex-col items-center justify-center text-center shadow">
                       <div className="font-black text-sm sm:text-base text-amber-300 leading-none">
                         {card.year}
                       </div>
-                      <div className="text-[9px] font-bold text-slate-200 leading-tight line-clamp-2 mt-0.5">
+                      <div className="w-full text-[9px] font-bold text-slate-200 leading-tight line-clamp-2 break-words mt-0.5">
                         {card.title}
                       </div>
-                      <div className="text-[8px] text-slate-400 leading-tight line-clamp-1">
+                      <div className="w-full text-[8px] text-slate-400 leading-tight line-clamp-1 break-words">
                         {card.artist}
                       </div>
                     </div>
                   </React.Fragment>
                 );
               })}
-              {/* Sluitende plek helemaal rechts als de rij vol is */}
-              {row.length === 5 && renderSlot(offset + 5)}
+              {/* Sluitende plek rechts; beide rijen hebben hem, anders scheelt
+                  het weer breedte tussen de rijen */}
+              {renderSlot(offset + 5)}
             </div>
           );
         })}
