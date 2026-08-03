@@ -37,6 +37,10 @@ interface UseRoomResult {
   myPlayerId: string | null;
   isHost: boolean;
   sharedState: Record<string, unknown> | null;
+  /** Bingo-voortgang per speler-id, live van de andere telefoons */
+  liveScores: Record<string, { marked: number; bingos: number }>;
+  /** Eigen voortgang rondsturen; niet opgeslagen, alleen voor deze partij */
+  broadcastScore: (marked: number, bingos: number) => void;
   createRoom: (code: string, mode: string, hostName: string) => Promise<boolean>;
   /** Geeft de modus van de kamer terug, zodat de joiner hetzelfde spel krijgt */
   joinRoom: (code: string, name: string) => Promise<string | null>;
@@ -57,6 +61,7 @@ export function useRoom(): UseRoomResult {
   const [myPlayerId, setMyPlayerId] = useState<string | null>(null);
   const [isHost, setIsHost] = useState(false);
   const [sharedState, setSharedState] = useState<Record<string, unknown> | null>(null);
+  const [liveScores, setLiveScores] = useState<Record<string, { marked: number; bingos: number }>>({});
 
   const channelRef = useRef<ReturnType<NonNullable<ReturnType<typeof getSupabase>>['channel']> | null>(null);
   /** Voorkomt dat dezelfde telefoon zichzelf twee keer in de kamer zet */
@@ -119,6 +124,16 @@ export function useRoom(): UseRoomResult {
           if (payload.new?.state) setSharedState(payload.new.state);
         }
       )
+      // Bingo-scores gaan via broadcast in plaats van de database: ze gelden
+      // alleen deze partij, en zo kan niemand elkaars score overschrijven —
+      // iedereen stuurt uitsluitend zijn eigen cijfers rond.
+      .on('broadcast', { event: 'score' }, ({ payload }: { payload: { playerId: string; marked: number; bingos: number } }) => {
+        if (!payload?.playerId) return;
+        setLiveScores(prev => ({
+          ...prev,
+          [payload.playerId]: { marked: payload.marked, bingos: payload.bingos },
+        }));
+      })
       .subscribe();
 
     channelRef.current = channel;
@@ -209,6 +224,17 @@ export function useRoom(): UseRoomResult {
     return (room.mode as string) ?? null;
   }, [refreshPlayers, subscribe]);
 
+  const broadcastScore = useCallback((marked: number, bingos: number) => {
+    if (!channelRef.current || !myPlayerId) return;
+    // Ook lokaal bijhouden: je eigen broadcast komt niet bij jezelf terug
+    setLiveScores(prev => ({ ...prev, [myPlayerId]: { marked, bingos } }));
+    channelRef.current.send({
+      type: 'broadcast',
+      event: 'score',
+      payload: { playerId: myPlayerId, marked, bingos },
+    });
+  }, [myPlayerId]);
+
   const updateSharedState = useCallback(async (state: unknown) => {
     const sb = getSupabase();
     if (!sb || !roomCode) return;
@@ -233,6 +259,7 @@ export function useRoom(): UseRoomResult {
     setRoomCode(null);
     setPlayers([]);
     setSharedState(null);
+    setLiveScores({});
     setIsHost(false);
     setStatus('idle');
   }, [myPlayerId]);
@@ -242,6 +269,7 @@ export function useRoom(): UseRoomResult {
 
   return {
     status, error, roomCode, players, myPlayerId, isHost,
-    sharedState, createRoom, joinRoom, updateSharedState, leaveRoom,
+    sharedState, liveScores, broadcastScore,
+    createRoom, joinRoom, updateSharedState, leaveRoom,
   };
 }

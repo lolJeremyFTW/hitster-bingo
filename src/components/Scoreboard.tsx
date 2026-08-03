@@ -11,8 +11,12 @@ interface ScoreboardProps {
   roomCode?: string | null;
   roomStatus?: RoomStatus;
   roomError?: string | null;
-  /** Kaarten en munten per speler-id, uit de lopende spelstaat */
+  /** Kaarten en munten per speler-id, uit de lopende klassieke partij */
   liveStats?: Record<string, { cards: number; tokens: number }>;
+  /** Afgekruiste vakjes en bingo's per speler-id, in de bingo-modus */
+  bingoStats?: Record<string, { marked: number; bingos: number }>;
+  /** Bepaalt welke cijfers zinvol zijn om te tonen */
+  mode?: 'classic' | 'bingo';
   myPlayerId?: string | null;
 }
 
@@ -29,8 +33,11 @@ export const Scoreboard: React.FC<ScoreboardProps> = ({
   roomStatus = 'idle',
   roomError,
   liveStats,
+  bingoStats,
+  mode = 'classic',
   myPlayerId,
 }) => {
+  const isBingo = mode === 'bingo';
   const isNl = language === 'nl';
   const isLive = !!roomCode && (roomPlayers?.length ?? 0) > 0;
 
@@ -59,7 +66,8 @@ export const Scoreboard: React.FC<ScoreboardProps> = ({
     setNewPlayerName('');
   };
 
-  // Meeste kaarten eerst, munten als tiebreak
+  // Klassiek rangschikt op kaarten (munten als tiebreak), bingo op bingo's
+  // en dan op afgekruiste vakjes
   const ranked = isLive
     ? [...(roomPlayers ?? [])]
         .map(p => ({
@@ -68,8 +76,14 @@ export const Scoreboard: React.FC<ScoreboardProps> = ({
           isHost: p.isHost,
           cards: liveStats?.[p.id]?.cards ?? 0,
           tokens: liveStats?.[p.id]?.tokens ?? 0,
+          marked: bingoStats?.[p.id]?.marked ?? 0,
+          bingos: bingoStats?.[p.id]?.bingos ?? 0,
         }))
-        .sort((a, b) => b.cards - a.cards || b.tokens - a.tokens)
+        .sort((a, b) =>
+          isBingo
+            ? b.bingos - a.bingos || b.marked - a.marked
+            : b.cards - a.cards || b.tokens - a.tokens
+        )
     : [];
 
   return (
@@ -136,12 +150,33 @@ export const Scoreboard: React.FC<ScoreboardProps> = ({
                     )}
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
-                    <span className="flex items-center gap-1 text-amber-300 font-black">
-                      <Coins className="w-3.5 h-3.5" />{p.tokens}
-                    </span>
-                    <span className="font-black text-slate-200">
-                      {p.cards} <span className="text-slate-500 font-normal">{isNl ? 'kaarten' : 'cards'}</span>
-                    </span>
+                    {isBingo ? (
+                      <>
+                        {p.bingos > 0 && (
+                          <span className="flex items-center gap-1 text-amber-300 font-black">
+                            <Trophy className="w-3.5 h-3.5" />{p.bingos}
+                          </span>
+                        )}
+                        <span className="font-black text-slate-200">
+                          {p.marked}{' '}
+                          <span className="text-slate-500 font-normal">
+                            {isNl ? 'vakjes' : 'squares'}
+                          </span>
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="flex items-center gap-1 text-amber-300 font-black">
+                          <Coins className="w-3.5 h-3.5" />{p.tokens}
+                        </span>
+                        <span className="font-black text-slate-200">
+                          {p.cards}{' '}
+                          <span className="text-slate-500 font-normal">
+                            {isNl ? 'kaarten' : 'cards'}
+                          </span>
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
               ))}

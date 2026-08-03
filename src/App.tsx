@@ -250,6 +250,12 @@ export function App() {
     const winResult = checkBingoWin(newTiles, gridSize);
     setHasWin(winResult.hasWin);
     setWinningIndices(winResult.winningIndices);
+
+    // Voortgang rondsturen zodat het scorebord van de anderen meeloopt
+    if (isHitsterMode && room.roomCode) {
+      const marked = newTiles.filter(t => t.isMarked).length;
+      room.broadcastScore(marked, winResult.hasWin ? 1 : 0);
+    }
   };
 
   const handleCallBingo = () => {
@@ -338,6 +344,8 @@ export function App() {
             roomStatus={room.status}
             roomError={room.error}
             myPlayerId={room.myPlayerId}
+          mode={isClassicMode ? 'classic' : 'bingo'}
+          bingoStats={room.liveScores}
             liveStats={Object.fromEntries(classicState.players.map(p => [
               p.id, { cards: p.timeline.length, tokens: p.tokens },
             ]))}
@@ -541,6 +549,8 @@ export function App() {
           roomStatus={room.status}
           roomError={room.error}
           myPlayerId={room.myPlayerId}
+          mode={isClassicMode ? 'classic' : 'bingo'}
+          bingoStats={room.liveScores}
           // Kaarten en munten komen uit de lopende klassieke partij
           liveStats={classicState
             ? Object.fromEntries(classicState.players.map(p => [
