@@ -3,6 +3,7 @@ import { Check, Info, Sparkles, Flame, HelpCircle } from 'lucide-react';
 import type { BingoTile, GridSize, Language } from '../types/hitster';
 import { getTranslation } from '../utils/translations';
 import { soundEffects } from '../utils/soundEffects';
+import { YearGuessBox } from './YearGuessBox';
 
 interface BingoGridProps {
   tiles: BingoTile[];
@@ -12,6 +13,7 @@ interface BingoGridProps {
   onCallBingo: () => void;
   hasWin: boolean;
   language: Language;
+  actualYear?: number;
 }
 
 export const BingoGrid: React.FC<BingoGridProps> = ({
@@ -21,7 +23,8 @@ export const BingoGrid: React.FC<BingoGridProps> = ({
   onTileClick,
   onCallBingo,
   hasWin,
-  language
+  language,
+  actualYear
 }) => {
   const [selectedHintTile, setSelectedHintTile] = useState<BingoTile | null>(null);
 
@@ -42,6 +45,10 @@ export const BingoGrid: React.FC<BingoGridProps> = ({
 
   return (
     <div className="w-full flex flex-col items-center">
+      {/* Year Lock-in Guess Assistant Box */}
+      <YearGuessBox language={language} actualYear={actualYear} />
+
+      {/* Board Header Status */}
       <div className="w-full flex items-center justify-between px-2 mb-3">
         <div className="text-xs text-amber-300/90 font-bold flex items-center gap-1.5">
           <Sparkles className="w-4 h-4 text-amber-400" />
@@ -56,6 +63,7 @@ export const BingoGrid: React.FC<BingoGridProps> = ({
         )}
       </div>
 
+      {/* Grid Container */}
       <div
         className={`w-full grid ${getGridColsClass()} gap-2 sm:gap-3 p-3 sm:p-4 rounded-2xl bg-slate-950/90 border border-amber-500/30 shadow-2xl backdrop-blur-md relative`}
       >
@@ -117,6 +125,7 @@ export const BingoGrid: React.FC<BingoGridProps> = ({
         })}
       </div>
 
+      {/* Call BINGO Button */}
       <button
         onClick={onCallBingo}
         className={`w-full mt-4 py-4 px-6 rounded-2xl font-black text-lg sm:text-xl uppercase tracking-widest flex items-center justify-center gap-2 transition-all shadow-xl transform active:scale-95 ${
@@ -130,6 +139,7 @@ export const BingoGrid: React.FC<BingoGridProps> = ({
         <Sparkles className="w-6 h-6 animate-spin" />
       </button>
 
+      {/* Tile Hint / Rules Popover Modal */}
       {selectedHintTile && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-amber-500/40 rounded-2xl p-5 max-w-sm w-full text-slate-100 shadow-2xl relative animate-fade-in">
