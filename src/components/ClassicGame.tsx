@@ -1,5 +1,5 @@
-import React, { useState, useCallback } from 'react';
-import { Coins, Eye, Users, Play, Pause, RotateCw, Trophy, Hand, Check, X } from 'lucide-react';
+import React, { useState, useCallback, useEffect } from 'react';
+import { Coins, Eye, Users, Play, Pause, RotateCw, Trophy, Hand, Check, X, Settings2 } from 'lucide-react';
 import type { CustomTrack, Language } from '../types/hitster';
 import { ClassicTimeline } from './ClassicTimeline';
 import { spotifyPlayer } from '../utils/spotifyPlayer';
@@ -14,6 +14,10 @@ import {
   nextTurn,
   resolveTurn,
   toTimelineCard,
+  pickStartMs,
+  SNIPPET_LENGTHS,
+  DEFAULT_SETTINGS,
+  type ClassicSettings,
 } from '../utils/classicGame';
 
 interface ClassicGameProps {
@@ -46,6 +50,18 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
   const [viewedPlayerId, setViewedPlayerId] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<ResolveOutcome['summary'] | null>(null);
   const [playerError, setPlayerError] = useState<string | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [settings, setSettings] = useState<ClassicSettings>(() => {
+    const saved = localStorage.getItem('hitster_classic_settings');
+    if (saved) {
+      try { return { ...DEFAULT_SETTINGS, ...JSON.parse(saved) }; } catch { /* standaard */ }
+    }
+    return { ...DEFAULT_SETTINGS, snippetSeconds };
+  });
+
+  useEffect(() => {
+    localStorage.setItem('hitster_classic_settings', JSON.stringify(settings));
+  }, [settings]);
 
   const isNl = language === 'nl';
   const active = state.players[state.activePlayerIndex];
@@ -64,9 +80,9 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
         else setPlayerError(null);
       },
       onTick: setSecondsLeft,
-      onSnippetEnd: () => { setIsPlaying(false); setSecondsLeft(snippetSeconds); },
+      onSnippetEnd: () => { setIsPlaying(false); setSecondsLeft(settings.snippetSeconds); },
     });
-  }, [snippetSeconds]);
+  }, [settings.snippetSeconds]);
 
   const handleDraw = useCallback(() => {
     const track = drawTrack(tracks, state.usedTrackIds, state.players);
@@ -80,10 +96,19 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
   const handlePlay = useCallback(async () => {
     if (!state.currentTrack?.spotifyUri) return;
     if (isPlaying) { spotifyPlayer.pause(); setIsPlaying(false); return; }
+
+    // Elke keer opnieuw kiezen, zodat hetzelfde nummer niet steeds op dezelfde
+    // plek begint als iemand het fragment herhaalt
+    const startAt = pickStartMs(
+      state.currentTrack.durationMs,
+      settings.snippetSeconds,
+      settings.snippetStart
+    );
+
     setIsPlaying(true);
-    setSecondsLeft(snippetSeconds);
-    await spotifyPlayer.playSnippet(state.currentTrack.spotifyUri, snippetSeconds, 0);
-  }, [state.currentTrack, isPlaying, snippetSeconds]);
+    setSecondsLeft(settings.snippetSeconds);
+    await spotifyPlayer.playSnippet(state.currentTrack.spotifyUri, settings.snippetSeconds, startAt);
+  }, [state.currentTrack, isPlaying, settings]);
 
   const handlePlace = (position: number) => {
     setState(prev => ({ ...prev, placedPosition: position, phase: 'placed' }));
@@ -128,8 +153,25 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
 
   return (
     <div className="space-y-2">
-      {/* Spelersstrip: munten en kaarten van iedereen, klikbaar om te bekijken */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+      {/* Instellingen: fragmentlengte en waar het fragment begint */}
+      <div className="flex items-center justify-between gap-2">
+        <button
+          onClick={() => setShowSettings(v => !v)}
+          className={`shrink-0 px-2.5 py-1.5 rounded-xl border text-[11px] font-bold flex items-center gap-1.5 transition-colors ${
+            showSettings
+              ? 'bg-slate-800 border-amber-400 text-amber-300'
+              : 'bg-slate-900/80 border-slate-700 text-slate-300 hover:border-slate-500'
+          }`}
+        >
+          <Settings2 className="w-3.5 h-3.5" />
+          <span>
+            {settings.snippetSeconds}s
+            {settings.snippetStart === 'random' && (isNl ? ' · willekeurig' : ' · random')}
+          </span>
+        </button>
+
+        {/* Spelersstrip: munten en kaarten van iedereen, klikbaar om te bekijken */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 flex-1 min-w-0">
         {state.players.map(p => {
           const isActive = p.id === active?.id;
           const isViewed = p.id === viewed?.id;
@@ -167,7 +209,66 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
             </button>
           );
         })}
+        </div>
       </div>
+
+      {showSettings && (
+        <div className="p-3 rounded-2xl bg-slate-900/90 border border-amber-500/30 space-y-3">
+          <div>
+            <div className="text-[10px] uppercase font-black tracking-wider text-slate-400 mb-1.5">
+              {isNl ? 'Lengte van het fragment' : 'Snippet length'}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {SNIPPET_LENGTHS.map(sec => (
+                <button
+                  key={sec}
+                  onClick={() => setSettings(s => ({ ...s, snippetSeconds: sec }))}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                    settings.snippetSeconds === sec
+                      ? 'bg-amber-500 border-amber-400 text-slate-950'
+                      : 'bg-slate-950 border-slate-700 text-slate-300 hover:border-slate-500'
+                  }`}
+                >
+                  {sec}s
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div className="text-[10px] uppercase font-black tracking-wider text-slate-400 mb-1.5">
+              {isNl ? 'Waar begint het fragment' : 'Where the snippet starts'}
+            </div>
+            <div className="flex gap-1.5">
+              {([
+                { key: 'begin' as const, nl: 'Vanaf het begin', en: 'From the start' },
+                { key: 'random' as const, nl: 'Willekeurig', en: 'Random' },
+              ]).map(opt => (
+                <button
+                  key={opt.key}
+                  onClick={() => setSettings(s => ({ ...s, snippetStart: opt.key }))}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                    settings.snippetStart === opt.key
+                      ? 'bg-amber-500 border-amber-400 text-slate-950'
+                      : 'bg-slate-950 border-slate-700 text-slate-300 hover:border-slate-500'
+                  }`}
+                >
+                  {isNl ? opt.nl : opt.en}
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-slate-500 mt-1.5 leading-relaxed">
+              {settings.snippetStart === 'random'
+                ? (isNl
+                    ? 'Springt ergens het nummer in, maar niet in de intro of de fade-out. Elke keer opnieuw, dus herhalen geeft een ander stuk.'
+                    : 'Jumps somewhere into the song, avoiding the intro and fade-out. Re-playing gives a different part.')
+                : (isNl
+                    ? 'Speelt vanaf 0:00, zoals bij het bordspel.'
+                    : 'Plays from 0:00, like the board game.')}
+            </p>
+          </div>
+        </div>
+      )}
 
       {playerError && (
         <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-[11px] text-amber-200">
@@ -206,7 +307,9 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
               className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white font-black text-xs uppercase flex items-center gap-1.5"
             >
               {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 fill-current" />}
-              {isPlaying ? `${secondsLeft}s` : (isNl ? `Speel ${snippetSeconds}s` : `Play ${snippetSeconds}s`)}
+              {isPlaying
+                ? `${secondsLeft}s`
+                : (isNl ? `Speel ${settings.snippetSeconds}s` : `Play ${settings.snippetSeconds}s`)}
             </button>
 
             {state.phase !== 'revealed' && isMyTurn && (

@@ -74,6 +74,9 @@ export interface CustomTrack {
   albumName?: string;
   /** Solo-artiest of groep, via MusicBrainz. Onbekend = spelers beoordelen zelf. */
   artistType?: 'person' | 'group' | 'unknown';
+  /** Lengte van het nummer; nodig om een willekeurig fragment te kiezen
+   *  dat niet voorbij het einde valt */
+  durationMs?: number;
 }
 
 export interface CustomPlaylist {

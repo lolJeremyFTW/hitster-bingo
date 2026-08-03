@@ -337,7 +337,7 @@ export async function matchTracksToSpotify(
 
   onProgress?.(`🔗 ${missing.length} nummers koppelen aan Spotify...`, 0, missing.length);
 
-  const matches = new Map<string, { uri: string; url: string; year?: number; album?: string }>();
+  const matches = new Map<string, { uri: string; url: string; year?: number; album?: string; durationMs?: number }>();
   let done = 0;
 
   for (const track of missing) {
@@ -364,6 +364,7 @@ export async function matchTracksToSpotify(
             url: hit.external_urls?.spotify || `https://open.spotify.com/track/${hit.id}`,
             year,
             album: hit.album?.name,
+            durationMs: typeof hit.duration_ms === 'number' ? hit.duration_ms : undefined,
           });
         }
       }
@@ -387,6 +388,7 @@ export async function matchTracksToSpotify(
       // Bestaand jaartal niet overschrijven — dat kan al gecorrigeerd zijn
       year: t.year ?? m.year,
       albumName: t.albumName ?? m.album,
+      durationMs: t.durationMs ?? m.durationMs,
     };
   });
 
@@ -490,7 +492,7 @@ export async function fetchPlaylistTracksWithOAuth(
   let skippedLocal = 0;
 
   const fields =
-    'next,total,items(is_local,item(id,name,uri,artists(name),album(name,release_date,release_date_precision),external_urls))';
+    'next,total,items(is_local,item(id,name,uri,duration_ms,artists(name),album(name,release_date,release_date_precision),external_urls))';
 
   // /items is de opvolger van het deprecated /tracks endpoint
   let nextUrl: string | null =
@@ -556,6 +558,7 @@ export async function fetchPlaylistTracksWithOAuth(
         year,
         yearSource: year ? 'spotify' : undefined,
         albumName: track.album?.name,
+        durationMs: typeof track.duration_ms === 'number' ? track.duration_ms : undefined,
         spotifyUri: track.uri || `spotify:track:${track.id}`,
         spotifyUrl: track.external_urls?.spotify || `https://open.spotify.com/track/${track.id}`,
       });

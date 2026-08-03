@@ -297,3 +297,46 @@ export function canSteal(state: ClassicGameState, playerId: string, position: nu
 export function canBuyFreeCard(player: ClassicPlayer): boolean {
   return player.tokens >= TOKENS_FOR_FREE_CARD;
 }
+
+/** Toegestane fragmentlengtes in seconden. */
+export const SNIPPET_LENGTHS = [5, 10, 15, 20, 25, 30] as const;
+
+export type SnippetStart = 'begin' | 'random';
+
+export interface ClassicSettings {
+  snippetSeconds: number;
+  snippetStart: SnippetStart;
+}
+
+export const DEFAULT_SETTINGS: ClassicSettings = {
+  snippetSeconds: 25,
+  snippetStart: 'begin',
+};
+
+/** Als de lengte onbekend is, gaan we uit van een doorsnee popnummer. */
+const ASSUMED_DURATION_MS = 3.5 * 60 * 1000;
+
+/**
+ * Kiest waar het fragment begint.
+ *
+ * Bij 'random' blijft de eerste 15% buiten beeld — intro's zijn vaak juist het
+ * herkenbaarste stukje — en eindigt het fragment ruim voor de laatste 10%, om
+ * niet in de fade-out of de stilte te belanden. Past het fragment niet binnen
+ * die marges, dan begint het gewoon bij het begin.
+ */
+export function pickStartMs(
+  durationMs: number | undefined,
+  snippetSeconds: number,
+  mode: SnippetStart
+): number {
+  if (mode === 'begin') return 0;
+
+  const duration = durationMs && durationMs > 0 ? durationMs : ASSUMED_DURATION_MS;
+  const snippetMs = snippetSeconds * 1000;
+
+  const earliest = Math.floor(duration * 0.15);
+  const latest = Math.floor(duration * 0.9) - snippetMs;
+
+  if (latest <= earliest) return 0;
+  return earliest + Math.floor(Math.random() * (latest - earliest));
+}
