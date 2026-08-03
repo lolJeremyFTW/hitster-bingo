@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Music, Plus, Trash2, Download, Upload, Save, Check, Disc, ExternalLink, Link as LinkIcon, FileText, Loader2, Sparkles, Layers, Terminal, LogIn, LogOut } from 'lucide-react';
 import type { CustomPlaylist, CustomTrack, Language } from '../types/hitster';
 import { getTranslation } from '../utils/translations';
-import { parseBatchTracksText } from '../utils/spotifyImporter';
+import { parseBatchTracksText, fetchSpotifyPlaylistPublic } from '../utils/spotifyImporter';
 import { initiateSpotifyLogin, isSpotifyAuthenticated, getStoredClientId, logoutSpotify, fetchPlaylistTracksWithOAuth } from '../utils/spotifyAuth';
 
 interface PlaylistStudioProps {
@@ -157,65 +157,74 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
     setLiveTrackCount(0);
 
     try {
-      const res = await fetch('/api/spotify-embed', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: spotifyUrl })
-      });
-
-      if (!res.ok || !res.body) throw new Error(`Server status ${res.status}`);
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
+      // First try server stream (local dev)
       let finalTracks: CustomTrack[] = [];
+      try {
+        const res = await fetch('/api/spotify-embed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: spotifyUrl })
+        });
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split('\n');
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const payload = JSON.parse(line.slice(6));
-              if (payload.message) {
-                setCrawlerLogs(prev => [...prev.slice(-30), payload.message]);
-                setLiveTrackCount(payload.count || 0);
+        if (res.ok && res.body) {
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split('\n');
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                try {
+                  const payload = JSON.parse(line.slice(6));
+                  if (payload.message) {
+                    setCrawlerLogs(prev => [...prev.slice(-30), payload.message]);
+                    setLiveTrackCount(payload.count || 0);
+                  }
+                  if (payload.tracks && payload.tracks.length > 0) {
+                    finalTracks = payload.tracks;
+                  }
+                } catch { /* continue */ }
               }
-              if (payload.tracks && payload.tracks.length > 0) {
-                finalTracks = payload.tracks;
-              }
-              if (payload.isDone && finalTracks.length > 0) {
-                const newPlaylist: CustomPlaylist = {
-                  id: `embed_${Date.now()}`,
-                  name: 'Spotify Playlist',
-                  description: `Embed Import (${finalTracks.length} nummers, zonder login)`,
-                  createdAt: new Date().toISOString(),
-                  tracks: finalTracks
-                };
-                setActivePlaylist(newPlaylist);
-                setSpotifyUrlInput('');
-                setActiveTab('single');
-                setImportedCountInfo(
-                  language === 'nl'
-                    ? `🎉 ${finalTracks.length} nummers geïmporteerd (zonder login)!`
-                    : `🎉 ${finalTracks.length} tracks imported (no login)!`
-                );
-              }
-            } catch {
-              // continue
             }
           }
         }
+      } catch {
+        // Stream endpoint not available (e.g. Vercel static host)
       }
 
+      // If server stream yielded 0 tracks, try client-side public embed fetcher
       if (finalTracks.length === 0) {
+        setCrawlerLogs(prev => [...prev, '🌐 Publieke Spotify Embed ophalen via browser...']);
+        const pubResult = await fetchSpotifyPlaylistPublic(spotifyUrl);
+        if (pubResult && pubResult.tracks.length > 0) {
+          finalTracks = pubResult.tracks;
+          setLiveTrackCount(finalTracks.length);
+        }
+      }
+
+      if (finalTracks.length > 0) {
+        const newPlaylist: CustomPlaylist = {
+          id: `embed_${Date.now()}`,
+          name: 'Spotify Playlist',
+          description: `Snel Geïmporteerd (${finalTracks.length} nummers)`,
+          createdAt: new Date().toISOString(),
+          tracks: finalTracks
+        };
+        setActivePlaylist(newPlaylist);
+        setSpotifyUrlInput('');
+        setActiveTab('single');
+        setImportedCountInfo(
+          language === 'nl'
+            ? `🎉 ${finalTracks.length} nummers geïmporteerd!`
+            : `🎉 ${finalTracks.length} tracks imported!`
+        );
+      } else {
         setSpotifyError(
           language === 'nl'
-            ? '❌ Geen nummers gevonden. Is de playlist openbaar? Probeer OAuth login.'
-            : '❌ No tracks found. Is the playlist public? Try OAuth login.'
+            ? '❌ Geen nummers gevonden. Is de afspeellijst openbaar? Probeer "Login (800+)" voor volledige toegang.'
+            : '❌ No tracks found. Is the playlist public? Try "Login (800+)" for full access.'
         );
       }
     } catch (err: any) {

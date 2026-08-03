@@ -28,7 +28,7 @@ export async function fetchSpotifyPlaylistPublic(playlistUrlOrId: string): Promi
 
   const embedUrl = `https://open.spotify.com/embed/playlist/${playlistId}`;
   
-  // Try fetching direct embed and via proxies
+  // Try direct embed and public CORS proxies
   const proxySources = [
     embedUrl,
     `https://api.allorigins.win/raw?url=${encodeURIComponent(embedUrl)}`,
@@ -43,6 +43,7 @@ export async function fetchSpotifyPlaylistPublic(playlistUrlOrId: string): Promi
     try {
       const res = await fetch(targetUrl, {
         headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           'Accept': 'text/html,application/xhtml+xml,application/xml',
         }
       });
@@ -52,59 +53,87 @@ export async function fetchSpotifyPlaylistPublic(playlistUrlOrId: string): Promi
       const htmlText = await res.text();
       if (!htmlText || htmlText.length < 500) continue;
 
-      // Extract JSON payload embedded inside Spotify iframe HTML
-      const jsonMatch = htmlText.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s) ||
-                        htmlText.match(/<script id="resource" type="application\/json">(.*?)<\/script>/s) ||
-                        htmlText.match(/<script id="initial-state" type="application\/json">(.*?)<\/script>/s);
+      // Extract all script JSON contents or window variable assignments
+      const scriptMatches = Array.from(htmlText.matchAll(/<script[^>]*>(.*?)<\/script>/gs));
 
-      if (jsonMatch && jsonMatch[1]) {
-        try {
-          const payload = JSON.parse(jsonMatch[1]);
-          const entity = payload?.props?.pageProps?.state?.data?.entity || payload?.entity || payload?.data?.entity;
+      for (const m of scriptMatches) {
+        const content = m[1]?.trim();
+        if (!content || content.length < 50) continue;
 
-          if (entity) {
-            if (entity.name) playlistTitle = entity.name;
+        let jsonCandidate: any = null;
+        if (content.startsWith('{') || content.startsWith('[')) {
+          try { jsonCandidate = JSON.parse(content); } catch { /* ignore */ }
+        } else if (content.includes('JSON.parse(') || content.includes('state') || content.includes('entity')) {
+          const rawMatch = content.match(/\{.*?\}/s);
+          if (rawMatch) {
+            try { jsonCandidate = JSON.parse(rawMatch[0]); } catch { /* ignore */ }
+          }
+        }
 
-            const rawItems = entity.trackList || entity.tracks?.items || [];
-            rawItems.forEach((item: any, idx: number) => {
-              const title = item.title || item.name || item.track?.name;
-              const artist = item.subtitle || (item.artists ? item.artists.map((a: any) => a.name).join(', ') : 'Unknown Artist');
-              const previewUrl = item.audioPreview?.url || item.preview_url || item.track?.preview_url;
+        if (!jsonCandidate) continue;
 
-              let trackId = item.id || item.uid || `sp_${idx}_${Date.now()}`;
-              if (item.uri && item.uri.includes('spotify:track:')) {
-                trackId = item.uri.split('spotify:track:')[1];
-              }
+        // Recursive track extraction helper
+        const extractTracksFromObj = (obj: any, depth = 0): void => {
+          if (!obj || typeof obj !== 'object' || depth > 15) return;
 
-              let year: number | undefined;
-              if (item.releaseDate) {
-                const yMatch = item.releaseDate.match(/\d{4}/);
-                if (yMatch) year = parseInt(yMatch[0], 10);
-              }
+          if (obj.name && (obj.type === 'playlist' || obj.type === 'album')) {
+            playlistTitle = obj.name;
+          }
 
-              if (title && title.toLowerCase() !== 'title') {
+          if (obj.name && (obj.artists || obj.subtitle || obj.type === 'track') && obj.type !== 'playlist') {
+            const title = obj.name;
+            let artist = 'Unknown Artist';
+            if (Array.isArray(obj.artists)) {
+              artist = obj.artists.map((a: any) => a.name || a).filter(Boolean).join(', ');
+            } else if (typeof obj.subtitle === 'string') {
+              artist = obj.subtitle;
+            } else if (obj.artists?.items) {
+              artist = obj.artists.items.map((a: any) => a.profile?.name || a.name).filter(Boolean).join(', ');
+            }
+
+            let year: number | undefined;
+            const relDate = obj.album?.release_date || obj.releaseDate || obj.album?.date;
+            if (relDate) {
+              const yMatch = String(relDate).match(/\d{4}/);
+              if (yMatch) year = parseInt(yMatch[0], 10);
+            }
+
+            let trackId = obj.id || obj.uid;
+            if (obj.uri && typeof obj.uri === 'string' && obj.uri.includes('spotify:track:')) {
+              trackId = obj.uri.split('spotify:track:')[1];
+            }
+
+            if (title && title.toLowerCase() !== 'title' && trackId) {
+              if (!tracks.some(t => t.id === trackId)) {
                 tracks.push({
                   id: trackId,
                   title: title.trim(),
                   artist: artist ? artist.trim() : 'Unknown Artist',
                   year,
-                  audioPreviewUrl: previewUrl || undefined,
+                  audioPreviewUrl: obj.audioPreview?.url || obj.preview_url || undefined,
                   spotifyUrl: `https://open.spotify.com/track/${trackId}`
                 });
               }
-            });
-
-            if (tracks.length > 0) {
-              console.log(`[Spotify Importer] Successfully loaded ${tracks.length} tracks from embed!`);
-              return { name: playlistTitle, tracks, totalTracksInPlaylist: tracks.length };
             }
           }
-        } catch (e) {
-          // JSON parse failed, try next proxy
-        }
+
+          if (Array.isArray(obj)) {
+            obj.forEach(item => extractTracksFromObj(item, depth + 1));
+          } else {
+            Object.values(obj).forEach(val => extractTracksFromObj(val, depth + 1));
+          }
+        };
+
+        extractTracksFromObj(jsonCandidate);
+        if (tracks.length > 0) break;
       }
-    } catch (e) {
-      // Fetch failed, try next proxy
+
+      if (tracks.length > 0) {
+        console.log(`[Spotify Public Importer] Loaded ${tracks.length} tracks from ${targetUrl}`);
+        return { name: playlistTitle, tracks, totalTracksInPlaylist: tracks.length };
+      }
+    } catch {
+      // Try next proxy
     }
   }
 
