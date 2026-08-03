@@ -15,8 +15,12 @@
 
 const SPOTIFY_AUTH_URL = 'https://accounts.spotify.com/authorize';
 const SPOTIFY_TOKEN_URL = 'https://accounts.spotify.com/api/token';
-const REDIRECT_URI = window.location.origin;
 const SCOPES = 'playlist-read-private playlist-read-collaborative';
+
+export function getRedirectUri(): string {
+  // Always use exact origin without trailing slash (e.g. http://localhost:5173 or https://hitster-bingo-sandy.vercel.app)
+  return window.location.origin.replace(/\/+$/, '');
+}
 
 // Storage keys
 const STORAGE_KEYS = {
@@ -78,7 +82,7 @@ export async function initiateSpotifyLogin(clientId: string): Promise<void> {
     scope: SCOPES,
     code_challenge_method: 'S256',
     code_challenge: codeChallenge,
-    redirect_uri: REDIRECT_URI,
+    redirect_uri: getRedirectUri(),
   });
 
   // Redirect to Spotify
@@ -117,7 +121,7 @@ export async function handleSpotifyCallback(): Promise<boolean> {
       client_id: clientId,
       grant_type: 'authorization_code',
       code,
-      redirect_uri: REDIRECT_URI,
+      redirect_uri: getRedirectUri(),
       code_verifier: codeVerifier,
     });
 
