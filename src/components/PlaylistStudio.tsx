@@ -126,13 +126,14 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
         };
 
         setActivePlaylist(newPlaylist);
-        setSpotifyUrlInput('');
-        setActiveTab('single');
         setImportedCountInfo(
           language === 'nl'
-            ? `🎉 ${result.tracks.length} nummers geïmporteerd uit "${result.name}"!`
-            : `🎉 ${result.tracks.length} tracks imported from "${result.name}"!`
+            ? `🎉 Succesvol ${result.tracks.length} nummers geïmporteerd uit "${result.name}"!`
+            : `🎉 Successfully imported ${result.tracks.length} tracks from "${result.name}"!`
         );
+        if (onSelectPlaylist) {
+          onSelectPlaylist(newPlaylist);
+        }
       } else {
         setSpotifyError(
           language === 'nl'
@@ -213,18 +214,19 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
           tracks: finalTracks
         };
         setActivePlaylist(newPlaylist);
-        setSpotifyUrlInput('');
-        setActiveTab('single');
         setImportedCountInfo(
           language === 'nl'
-            ? `🎉 ${finalTracks.length} nummers geïmporteerd!`
-            : `🎉 ${finalTracks.length} tracks imported!`
+            ? `🎉 Succesvol ${finalTracks.length} nummers geïmporteerd!`
+            : `🎉 Successfully imported ${finalTracks.length} tracks!`
         );
+        if (onSelectPlaylist) {
+          onSelectPlaylist(newPlaylist);
+        }
       } else {
         setSpotifyError(
           language === 'nl'
-            ? '❌ Geen nummers gevonden. Is de afspeellijst openbaar? Probeer "Login (800+)" voor volledige toegang.'
-            : '❌ No tracks found. Is the playlist public? Try "Login (800+)" for full access.'
+            ? '❌ Geen nummers gevonden in deze afspeellijst. Controleer of de afspeellijst openbaar is.'
+            : '❌ No tracks found in this playlist. Please check if the playlist is public.'
         );
       }
     } catch (err: any) {
