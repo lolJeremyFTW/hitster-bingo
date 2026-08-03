@@ -76,12 +76,14 @@ export async function fetchSpotifyPlaylistPublic(playlistUrlOrId: string): Promi
         const extractTracksFromObj = (obj: any, depth = 0): void => {
           if (!obj || typeof obj !== 'object' || depth > 15) return;
 
-          if (obj.name && (obj.type === 'playlist' || obj.type === 'album')) {
-            playlistTitle = obj.name;
+          const trackTitle = obj.title || obj.name;
+
+          if (obj.type === 'playlist' || obj.type === 'album') {
+            if (obj.name || obj.title) playlistTitle = obj.name || obj.title;
           }
 
-          if (obj.name && (obj.artists || obj.subtitle || obj.type === 'track') && obj.type !== 'playlist') {
-            const title = obj.name;
+          if (trackTitle && (obj.artists || obj.subtitle || obj.type === 'track' || obj.entityType === 'track') && obj.type !== 'playlist') {
+            const title = String(trackTitle).trim();
             let artist = 'Unknown Artist';
             if (Array.isArray(obj.artists)) {
               artist = obj.artists.map((a: any) => a.name || a).filter(Boolean).join(', ');
@@ -102,8 +104,9 @@ export async function fetchSpotifyPlaylistPublic(playlistUrlOrId: string): Promi
             if (obj.uri && typeof obj.uri === 'string' && obj.uri.includes('spotify:track:')) {
               trackId = obj.uri.split('spotify:track:')[1];
             }
+            if (!trackId) trackId = `${title}_${artist}`;
 
-            if (title && title.toLowerCase() !== 'title' && trackId) {
+            if (title && title.toLowerCase() !== 'title') {
               if (!tracks.some(t => t.id === trackId)) {
                 tracks.push({
                   id: trackId,

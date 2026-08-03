@@ -273,18 +273,18 @@ function spotifyApiPlugin() {
               const extractTracks = (obj: any, depth = 0): void => {
                 if (!obj || typeof obj !== 'object' || depth > 15) return;
 
-                // Check for playlist name
-                if (obj.name && obj.type === 'playlist') {
-                  playlistName = obj.name;
+                const trackTitle = obj.title || obj.name;
+
+                if (obj.type === 'playlist' || obj.type === 'album') {
+                  if (obj.name || obj.title) playlistName = obj.name || obj.title;
                 }
 
-                // Check if this looks like a track
-                if (obj.name && (obj.artists || obj.subtitle || obj.type === 'track') && obj.type !== 'playlist') {
-                  const title = obj.name;
+                if (trackTitle && (obj.artists || obj.subtitle || obj.type === 'track' || obj.entityType === 'track') && obj.type !== 'playlist') {
+                  const title = String(trackTitle).trim();
                   let artist = 'Unknown Artist';
                   if (Array.isArray(obj.artists)) {
                     artist = obj.artists.map((a: any) => a.name || a).filter(Boolean).join(', ');
-                  } else if (obj.subtitle) {
+                  } else if (typeof obj.subtitle === 'string') {
                     artist = obj.subtitle;
                   } else if (obj.artists?.items) {
                     artist = obj.artists.items.map((a: any) => a.profile?.name || a.name).filter(Boolean).join(', ');
@@ -298,12 +298,12 @@ function spotifyApiPlugin() {
                   }
 
                   let trackId = obj.id || obj.uid;
-                  if (obj.uri?.includes('spotify:track:')) {
+                  if (obj.uri && typeof obj.uri === 'string' && obj.uri.includes('spotify:track:')) {
                     trackId = obj.uri.split('spotify:track:')[1];
                   }
+                  if (!trackId) trackId = `${title}_${artist}`;
 
-                  if (title && title.toLowerCase() !== 'title' && trackId) {
-                    // Deduplicate by id
+                  if (title && title.toLowerCase() !== 'title') {
                     if (!tracks.some(t => t.id === trackId)) {
                       tracks.push({
                         id: trackId,
