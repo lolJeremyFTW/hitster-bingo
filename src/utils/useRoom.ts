@@ -57,9 +57,13 @@ export function useRoom(): UseRoomResult {
   const [sharedState, setSharedState] = useState<Record<string, unknown> | null>(null);
 
   const channelRef = useRef<ReturnType<NonNullable<ReturnType<typeof getSupabase>>['channel']> | null>(null);
+  /** Voorkomt dat dezelfde telefoon zichzelf twee keer in de kamer zet */
+  const joinGuard = useRef(false);
 
   /** Zet een leesbare melding neer in plaats van een rauwe Postgres-fout. */
   const describe = (err: { code?: string; message: string }): string => {
+    // Mislukt is niet binnen: grendel los, zodat opnieuw proberen kan
+    joinGuard.current = false;
     if (err.code === '42P01' || /does not exist/i.test(err.message)) {
       setStatus('not-migrated');
       return 'De tabellen bestaan nog niet. Draai supabase/migrations/001_hitster.sql in de SQL Editor.';
@@ -122,6 +126,11 @@ export function useRoom(): UseRoomResult {
     const sb = getSupabase();
     if (!sb) { setStatus('offline'); setError('Supabase is niet geconfigureerd.'); return false; }
 
+    // React mount effects twee keer in StrictMode, en een hermount roept dit
+    // opnieuw aan. Zonder deze grendel belandt de host twee keer in de lijst.
+    if (joinGuard.current) return false;
+    joinGuard.current = true;
+
     setStatus('connecting');
     setError(null);
 
@@ -154,6 +163,9 @@ export function useRoom(): UseRoomResult {
   const joinRoom = useCallback(async (code: string, name: string) => {
     const sb = getSupabase();
     if (!sb) { setStatus('offline'); setError('Supabase is niet geconfigureerd.'); return false; }
+
+    if (joinGuard.current) return false;
+    joinGuard.current = true;
 
     setStatus('connecting');
     setError(null);
@@ -210,6 +222,7 @@ export function useRoom(): UseRoomResult {
     if (sb && myPlayerId) {
       await sb.from('players').delete().eq('id', myPlayerId);
     }
+    joinGuard.current = false;
     sessionStorage.removeItem(PLAYER_ID_KEY);
     setMyPlayerId(null);
     setRoomCode(null);
