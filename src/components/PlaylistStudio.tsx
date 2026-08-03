@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Music, Plus, Trash2, Download, Upload, Save, Check, Disc, ExternalLink, Link as LinkIcon, FileText, Loader2, Sparkles } from 'lucide-react';
+import { Music, Plus, Trash2, Download, Upload, Save, Check, Disc, ExternalLink, Link as LinkIcon, FileText, Loader2, Sparkles, Layers, Key, ChevronDown, ChevronUp } from 'lucide-react';
 import type { CustomPlaylist, CustomTrack, Language } from '../types/hitster';
 import { getTranslation } from '../utils/translations';
-import { fetchSpotifyPlaylistPublic, parseBatchTracksText } from '../utils/spotifyImporter';
+import { fetchAllTracksFromSpotifyAPI, fetchSpotifyPlaylistPublic, extractSpotifyPlaylistId, parseBatchTracksText } from '../utils/spotifyImporter';
 
 interface PlaylistStudioProps {
   language: Language;
@@ -35,6 +35,12 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
   const [spotifyUrl, setSpotifyUrlInput] = useState('');
   const [isImportingSpotify, setIsImportingSpotify] = useState(false);
   const [spotifyError, setSpotifyError] = useState<string | null>(null);
+  const [importedCountInfo, setImportedCountInfo] = useState<string | null>(null);
+
+  // Spotify API Keys (Optional for 800+ full import)
+  const [showApiKeys, setShowApiKeys] = useState(false);
+  const [spotifyClientId, setSpotifyClientId] = useState(() => localStorage.getItem('hitster_sp_client_id') || '');
+  const [spotifyClientSecret, setSpotifyClientSecret] = useState(() => localStorage.getItem('hitster_sp_client_secret') || '');
 
   // Batch Text State
   const [batchText, setBatchText] = useState('');
@@ -61,15 +67,38 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
     }
   }, []);
 
-  // 1. Spotify URL Import
+  // 1. Spotify Link Importer (Supports 800+ full API fetch & public embed fallback)
   const handleImportSpotify = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!spotifyUrl.trim()) return;
 
     setIsImportingSpotify(true);
     setSpotifyError(null);
+    setImportedCountInfo(null);
 
-    const result = await fetchSpotifyPlaylistPublic(spotifyUrl);
+    const playlistId = extractSpotifyPlaylistId(spotifyUrl);
+    if (!playlistId) {
+      setIsImportingSpotify(false);
+      setSpotifyError(language === 'nl' ? 'Ongeldige Spotify link.' : 'Invalid Spotify link.');
+      return;
+    }
+
+    let result = null;
+
+    // Save Client ID / Secret if provided
+    if (spotifyClientId.trim() && spotifyClientSecret.trim()) {
+      localStorage.setItem('hitster_sp_client_id', spotifyClientId.trim());
+      localStorage.setItem('hitster_sp_client_secret', spotifyClientSecret.trim());
+
+      // Attempt full 800+ Spotify API fetch
+      result = await fetchAllTracksFromSpotifyAPI(playlistId, spotifyClientId, spotifyClientSecret);
+    }
+
+    // Fallback to public embed fetch if API keys not provided or API call returned null
+    if (!result || result.tracks.length === 0) {
+      result = await fetchSpotifyPlaylistPublic(spotifyUrl);
+    }
+
     setIsImportingSpotify(false);
 
     if (result && result.tracks.length > 0) {
@@ -84,6 +113,11 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
       setActivePlaylist(newPlaylist);
       setSpotifyUrlInput('');
       setActiveTab('single');
+      setImportedCountInfo(
+        language === 'nl'
+          ? `🎉 Succesvol ${result.tracks.length} nummers ingeladen uit "${result.name}"!`
+          : `🎉 Successfully imported ${result.tracks.length} tracks from "${result.name}"!`
+      );
     } else {
       setSpotifyError(
         language === 'nl'
@@ -93,7 +127,6 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
     }
   };
 
-  // 2. Batch Text Import
   const handleImportBatchText = (e: React.FormEvent) => {
     e.preventDefault();
     if (!batchText.trim()) return;
@@ -109,7 +142,6 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
     }
   };
 
-  // 3. Add Single Track
   const handleAddSingleTrack = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !artist.trim()) return;
@@ -179,6 +211,8 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
     }
   };
 
+  const isNl = language === 'nl';
+
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
       <div className="bg-slate-900 border border-purple-500/40 rounded-3xl p-5 sm:p-6 max-w-2xl w-full text-slate-100 shadow-2xl relative my-auto animate-fade-in">
@@ -193,9 +227,9 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
                 {getTranslation(language, 'playlistStudioTitle')}
               </h2>
               <p className="text-xs text-slate-400">
-                {language === 'nl'
-                  ? 'Maak of importeer direct jouw Spotify afspeellijst voor Hitster Bingo!'
-                  : 'Import your Spotify playlist directly or build custom song lists!'}
+                {isNl
+                  ? 'Importeer direct jouw Spotify afspeellijst (ondersteunt 800+ nummers!)'
+                  : 'Import your Spotify playlist directly (supports 800+ tracks!)'}
               </p>
             </div>
           </div>
@@ -218,7 +252,7 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
             }`}
           >
             <LinkIcon className="w-3.5 h-3.5" />
-            <span>Spotify Link Import</span>
+            <span>Spotify Link (800+)</span>
           </button>
 
           <button
@@ -261,7 +295,7 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
                 required
                 value={spotifyUrl}
                 onChange={(e) => setSpotifyUrlInput(e.target.value)}
-                placeholder="https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"
+                placeholder="https://open.spotify.com/playlist/5zSKBda7QTnWMHecVs20E3"
                 className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-green-500 font-mono"
               />
               <button
@@ -282,8 +316,53 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
                 )}
               </button>
             </div>
+
+            {/* Expandable Free Spotify API Keys Section for 800+ Full Unlimited Fetch */}
+            <div className="pt-2 border-t border-slate-900">
+              <button
+                type="button"
+                onClick={() => setShowApiKeys(!showApiKeys)}
+                className="text-[11px] text-green-400 hover:underline font-bold flex items-center gap-1"
+              >
+                <Key className="w-3 h-3 text-green-400" />
+                <span>
+                  {isNl ? '🔑 Spotify API Sleutel (Voor álle 800+ nummers tegelijk in 1 klik)' : '🔑 Spotify API Key (For all 800+ tracks)'}
+                </span>
+                {showApiKeys ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+              </button>
+
+              {showApiKeys && (
+                <div className="mt-2.5 p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2 animate-fade-in text-xs">
+                  <p className="text-[11px] text-slate-300">
+                    {isNl
+                      ? 'Standaard laadt Spotify via de web-embed de top 100 nummers. Vul gratis 1-keer je Spotify Developer Client ID & Secret in om álle 800+ nummers tegelijk op te halen (gratis aan te maken op developer.spotify.com):'
+                      : 'Enter your Spotify Developer Client ID & Secret to page through all 800+ tracks at once:'}
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      value={spotifyClientId}
+                      onChange={(e) => setSpotifyClientId(e.target.value)}
+                      placeholder="Spotify Client ID"
+                      className="px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-green-300 focus:outline-none"
+                    />
+                    <input
+                      type="password"
+                      value={spotifyClientSecret}
+                      onChange={(e) => setSpotifyClientSecret(e.target.value)}
+                      placeholder="Spotify Client Secret"
+                      className="px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-green-300 focus:outline-none"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
             {spotifyError && (
               <p className="text-xs text-red-400 font-medium">{spotifyError}</p>
+            )}
+            {importedCountInfo && (
+              <p className="text-xs text-green-300 font-bold">{importedCountInfo}</p>
             )}
           </form>
         )}
@@ -291,8 +370,9 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
         {/* 2. Batch Text Paste Form */}
         {activeTab === 'text' && (
           <form onSubmit={handleImportBatchText} className="bg-slate-950/90 p-4 rounded-2xl border border-purple-500/30 mb-5 space-y-3">
-            <h3 className="text-xs font-extrabold uppercase tracking-wider text-purple-300">
-              Plak nummers (bijv. "Nummer - Artiest - 1984"):
+            <h3 className="text-xs font-extrabold uppercase tracking-wider text-purple-300 flex items-center gap-1.5">
+              <Layers className="w-4 h-4 text-purple-400" />
+              <span>Plak Tekstlijst:</span>
             </h3>
             <textarea
               rows={4}
@@ -377,8 +457,11 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
 
         {/* Track List */}
         <div className="max-h-52 overflow-y-auto pr-1 space-y-2 mb-5">
-          <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-1">
-            Nummers in afspeellijst ({activePlaylist.tracks.length}):
+          <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-1 flex items-center justify-between">
+            <span>Nummers in afspeellijst ({activePlaylist.tracks.length}):</span>
+            {activePlaylist.tracks.length >= 100 && (
+              <span className="text-purple-400">⚡ Grote Deck ({activePlaylist.tracks.length} nummers)</span>
+            )}
           </div>
           {activePlaylist.tracks.length === 0 ? (
             <p className="text-center text-xs text-slate-500 py-6">

@@ -3,6 +3,7 @@ import type { CustomTrack } from '../types/hitster';
 export interface SpotifyImportResult {
   name: string;
   tracks: CustomTrack[];
+  totalTracksInPlaylist?: number;
 }
 
 /**
@@ -24,11 +25,104 @@ export function extractSpotifyPlaylistId(urlOrId: string): string | null {
 }
 
 /**
- * Fetches Spotify playlist track metadata using multiple resilient fallback strategies:
- * 1. Direct Spotify Embed API
- * 2. AllOrigins CORS Proxy
- * 3. Corsproxy.io
- * 4. Spotify oEmbed API
+ * Fetches ALL 800+ tracks directly from Spotify's Official Web API using Client Credentials!
+ */
+export async function fetchAllTracksFromSpotifyAPI(
+  playlistId: string,
+  clientId: string,
+  clientSecret: string
+): Promise<SpotifyImportResult | null> {
+  try {
+    // 1. Get Access Token via Spotify Client Credentials Flow
+    const bodyParams = new URLSearchParams();
+    bodyParams.append('grant_type', 'client_credentials');
+
+    const tokenRes = await fetch('https://accounts.spotify.com/api/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': 'Basic ' + btoa(`${clientId.trim()}:${clientSecret.trim()}`)
+      },
+      body: bodyParams
+    });
+
+    if (!tokenRes.ok) return null;
+
+    const tokenData = await tokenRes.json();
+    const accessToken = tokenData.access_token;
+    if (!accessToken) return null;
+
+    // 2. Fetch Playlist Details
+    const playlistDetailsRes = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}`, {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+
+    let playlistTitle = 'Spotify Playlist';
+    if (playlistDetailsRes.ok) {
+      const details = await playlistDetailsRes.json();
+      if (details.name) playlistTitle = details.name;
+    }
+
+    // 3. Page through ALL tracks (offset 0, 100, 200, 300...)
+    let offset = 0;
+    const limit = 100;
+    let allTracks: CustomTrack[] = [];
+    let totalPlaylistCount = 0;
+
+    while (offset < 2000) { // Support up to 2000 tracks per playlist!
+      const tracksRes = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=${limit}&offset=${offset}`, {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+      });
+
+      if (!tracksRes.ok) break;
+
+      const tracksData = await tracksRes.json();
+      totalPlaylistCount = tracksData.total || totalPlaylistCount;
+      const items = tracksData.items || [];
+
+      items.forEach((item: any, idx: number) => {
+        const trackObj = item.track;
+        if (trackObj && trackObj.name) {
+          const title = trackObj.name;
+          const artist = trackObj.artists ? trackObj.artists.map((a: any) => a.name).join(', ') : 'Unknown Artist';
+          let year: number | undefined;
+
+          if (trackObj.album?.release_date) {
+            const yMatch = trackObj.album.release_date.match(/\d{4}/);
+            if (yMatch) year = parseInt(yMatch[0], 10);
+          }
+
+          allTracks.push({
+            id: trackObj.id || `sp_${offset + idx}_${Date.now()}`,
+            title: title.trim(),
+            artist: artist.trim(),
+            year,
+            audioPreviewUrl: trackObj.preview_url || undefined,
+            spotifyUrl: trackObj.external_urls?.spotify || `https://open.spotify.com/track/${trackObj.id}`
+          });
+        }
+      });
+
+      if (items.length === 0 || allTracks.length >= totalPlaylistCount) {
+        break;
+      }
+
+      offset += limit;
+    }
+
+    return {
+      name: playlistTitle,
+      tracks: allTracks,
+      totalTracksInPlaylist: totalPlaylistCount
+    };
+  } catch (err) {
+    console.error('Spotify API Fetch Error:', err);
+    return null;
+  }
+}
+
+/**
+ * Public Embed Fallback Importer (fetches initial batch of tracks without credentials)
  */
 export async function fetchSpotifyPlaylistPublic(playlistUrlOrId: string): Promise<SpotifyImportResult | null> {
   const playlistId = extractSpotifyPlaylistId(playlistUrlOrId);
@@ -44,7 +138,6 @@ export async function fetchSpotifyPlaylistPublic(playlistUrlOrId: string): Promi
   let playlistTitle = 'Spotify Playlist';
   let tracks: CustomTrack[] = [];
 
-  // Try each source URL until we get a valid HTML page containing Next.js or Embed state JSON
   for (const targetUrl of proxySources) {
     try {
       const res = await fetch(targetUrl, {
@@ -58,7 +151,6 @@ export async function fetchSpotifyPlaylistPublic(playlistUrlOrId: string): Promi
       const htmlText = await res.text();
       if (!htmlText || htmlText.length < 500) continue;
 
-      // Extract JSON payload embedded inside Spotify iframe HTML
       const jsonMatch = htmlText.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s) ||
                         htmlText.match(/<script id="resource" type="application\/json">(.*?)<\/script>/s) ||
                         htmlText.match(/<script id="initial-state" type="application\/json">(.*?)<\/script>/s);
@@ -82,7 +174,6 @@ export async function fetchSpotifyPlaylistPublic(playlistUrlOrId: string): Promi
                 trackId = item.uri.split('spotify:track:')[1];
               }
 
-              // Extract or generate release year from track details
               let year: number | undefined;
               if (item.releaseDate) {
                 const yMatch = item.releaseDate.match(/\d{4}/);
@@ -102,19 +193,19 @@ export async function fetchSpotifyPlaylistPublic(playlistUrlOrId: string): Promi
             });
 
             if (tracks.length > 0) {
-              return { name: playlistTitle, tracks };
+              return { name: playlistTitle, tracks, totalTracksInPlaylist: tracks.length };
             }
           }
         } catch {
-          // JSON parsing failed, try next source
+          // Continue
         }
       }
     } catch {
-      // Network fetch error on this source, continue to next fallback
+      // Continue
     }
   }
 
-  // 5. Ultimate Fallback: Fetch Spotify oEmbed endpoint for title
+  // Fallback oEmbed for title
   try {
     const oembedUrl = `https://open.spotify.com/oembed?url=https://open.spotify.com/playlist/${playlistId}`;
     const oembedRes = await fetch(oembedUrl);
@@ -133,28 +224,20 @@ export async function fetchSpotifyPlaylistPublic(playlistUrlOrId: string): Promi
 
 /**
  * Parses batch text (e.g. copied track lists from Spotify, text files, or Spotify web paste)
- * Formats supported:
- * - "Bohemian Rhapsody - Queen (1975)"
- * - "Hotel California by Eagles, 1976"
- * - "Title | Artist | 1985"
- * - "1. Track Name - Artist"
  */
 export function parseBatchTracksText(rawText: string): CustomTrack[] {
   const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
   const tracks: CustomTrack[] = [];
 
   lines.forEach((line, idx) => {
-    // Strip leading track numbers like "1. ", "02 - "
     const cleanLine = line.replace(/^\d+[\.\s\-]+\s*/, '');
 
-    // Extract release year if enclosed in parens or at the end e.g. (1984) or , 1984
     let year: number | undefined;
     const yearMatch = cleanLine.match(/[\(\[\,\s](\d{4})[\)\]\s]?/);
     if (yearMatch) {
       year = parseInt(yearMatch[1], 10);
     }
 
-    // Strip year portion for cleaner title/artist splitting
     const textWithoutYear = cleanLine.replace(/[\(\[\,]\s*\d{4}\s*[\)\]]?/, '').trim();
 
     let title = textWithoutYear;
