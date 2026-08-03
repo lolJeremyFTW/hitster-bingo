@@ -252,23 +252,23 @@ export async function fetchPlaylistTracksWithOAuth(
     if (onLog) onLog(msg, count);
   };
 
-  // Extract playlist ID
-  const match = playlistUrl.match(/playlist[\/:]([ a-zA-Z0-9]{22})/);
+  // Extract playlist ID (remove accidental space in regex)
+  const match = playlistUrl.match(/playlist[\/:]([a-zA-Z0-9]{22})/);
   const playlistId = match ? match[1] : playlistUrl.trim();
 
   if (!playlistId || playlistId.length < 10) {
     log('❌ Ongeldige Spotify playlist URL');
-    return null;
+    throw new Error('Ongeldige Spotify playlist URL. Zorg dat je een geldige playlist link gebruikt.');
   }
 
   // Get valid token
   const accessToken = await getValidAccessToken();
   if (!accessToken) {
     log('❌ Niet ingelogd bij Spotify. Klik op "Login met Spotify".');
-    return null;
+    throw new Error('Niet ingelogd bij Spotify. Klik op "Login met Spotify".');
   }
 
-  log('🎵 Playlist metadata ophalen...');
+  log(`🎵 Playlist ID: ${playlistId} ophalen...`);
 
   // Get playlist metadata
   const metaRes = await fetch(
@@ -283,13 +283,25 @@ export async function fetchPlaylistTracksWithOAuth(
       if (!newToken) {
         log('❌ Spotify sessie verlopen. Log opnieuw in.');
         logoutSpotify();
-        return null;
+        throw new Error('Spotify sessie verlopen. Log a.u.b. opnieuw in met Spotify.');
       }
       // Retry with new token
       return fetchPlaylistTracksWithOAuth(playlistUrl, onLog);
     }
-    log(`❌ Kan playlist niet laden (status ${metaRes.status})`);
-    return null;
+
+    if (metaRes.status === 404) {
+      log(`❌ Playlist niet gevonden (status 404).`);
+      throw new Error('Playlist niet gevonden (404). Controleer of de playlist bestaat en niet verwijderd is.');
+    }
+
+    if (metaRes.status === 403) {
+      log(`❌ Geen toegang tot playlist (status 403).`);
+      throw new Error('Geen toegang (403). Als de playlist privé is, zorg dat je ingelogd bent met het Spotify account dat eigenaar is.');
+    }
+
+    const errText = await metaRes.text().catch(() => '');
+    log(`❌ Spotify API Fout (${metaRes.status}): ${errText}`);
+    throw new Error(`Spotify API Fout (${metaRes.status}). ${errText}`);
   }
 
   const meta = await metaRes.json();
