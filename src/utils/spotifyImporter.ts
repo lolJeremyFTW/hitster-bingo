@@ -145,13 +145,50 @@ export async function fetchSpotifyPlaylistPublic(playlistUrlOrId: string): Promi
 
 /**
  * Super-Smart Batch Text / Spotify Paste Parser
+ * Handles:
+ * 1. Spotify Track URLs (e.g. https://open.spotify.com/track/7EQWtaBeTMsqe73xUUiVZ2)
+ * 2. Tab-separated text (Title \t Artist \t Album \t Year)
+ * 3. Multiline Spotify Web copy (Title on line 1, Artist on line 2, Album on line 3)
+ * 4. Standard text ("Title - Artist" or "Artist - Title (Year)")
  */
 export function parseBatchTracksText(rawText: string): CustomTrack[] {
   const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
   const tracks: CustomTrack[] = [];
 
-  lines.forEach((line, idx) => {
-    if (line.includes('\t')) {
+  // Mode 1: Check if input contains Spotify track URLs
+  const trackUrlLines = lines.filter(l => l.includes('spotify.com/track/') || l.includes('spotify:track:'));
+  if (trackUrlLines.length > 0) {
+    trackUrlLines.forEach((line, idx) => {
+      const match = line.match(/track[\/:]([a-zA-Z0-9]{22})/);
+      const trackId = match ? match[1] : `url_${idx}`;
+      
+      // If line also has text before/after URL (e.g. "Bohemian Rhapsody - Queen https://open.spotify.com/track/...")
+      const textWithoutUrl = line.replace(/https?:\/\/[^\s]+/g, '').replace(/spotify:track:[a-zA-Z0-9]{22}/g, '').trim();
+      let title = '';
+      let artist = 'Spotify Track';
+
+      if (textWithoutUrl.includes(' - ')) {
+        const parts = textWithoutUrl.split(' - ');
+        title = parts[0].trim();
+        artist = parts.slice(1).join(' - ').trim();
+      } else if (textWithoutUrl.length > 0) {
+        title = textWithoutUrl;
+      }
+
+      tracks.push({
+        id: trackId,
+        title: title || `Track ${idx + 1}`,
+        artist: artist !== 'Spotify Track' ? artist : 'Spotify Link',
+        spotifyUrl: `https://open.spotify.com/track/${trackId}`
+      });
+    });
+    return tracks;
+  }
+
+  // Mode 2: Check for Tab-separated format (Spotify Desktop copy)
+  const tabLines = lines.filter(l => l.includes('\t'));
+  if (tabLines.length > 0) {
+    tabLines.forEach((line, idx) => {
       const columns = line.split('\t').map(c => c.trim()).filter(Boolean);
       if (columns.length >= 2) {
         const title = columns[0];
@@ -173,11 +210,57 @@ export function parseBatchTracksText(rawText: string): CustomTrack[] {
             artist,
             year
           });
-          return;
         }
       }
-    }
+    });
+    return tracks;
+  }
 
+  // Mode 3: Check for Multiline Spotify Web Copy (Title \n Artist \n Album \n Duration)
+  // If lines don't contain ' - ' or '\t' and there are groups of 2-4 lines
+  const hasHyphens = lines.some(l => l.includes(' - ') || l.includes(' • '));
+  if (!hasHyphens && lines.length >= 2) {
+    let i = 0;
+    while (i < lines.length) {
+      // Skip numbers/index lines like "1", "2", "3"
+      if (/^\d+$/.test(lines[i])) {
+        i++;
+        continue;
+      }
+      const title = lines[i];
+      const artist = lines[i + 1] && !/^\d+$/.test(lines[i + 1]) ? lines[i + 1] : 'Unknown Artist';
+      
+      if (title && title.length > 0) {
+        let year: number | undefined;
+        // Check if artist or next line contains year
+        for (let j = i; j < Math.min(i + 4, lines.length); j++) {
+          const yMatch = lines[j].match(/\b(19\d{2}|20[0-2]\d)\b/);
+          if (yMatch) {
+            year = parseInt(yMatch[1], 10);
+            break;
+          }
+        }
+
+        tracks.push({
+          id: `paste_multi_${i}_${Date.now()}`,
+          title: title.trim(),
+          artist: artist.trim(),
+          year
+        });
+
+        // Advance past artist (and optional album/duration lines if present)
+        i += (artist !== 'Unknown Artist') ? 2 : 1;
+        // Skip duration formatted like "3:14" or "03:14"
+        if (i < lines.length && /^\d+:\d{2}$/.test(lines[i])) i++;
+      } else {
+        i++;
+      }
+    }
+    if (tracks.length > 0) return tracks;
+  }
+
+  // Mode 4: Standard "Artist - Title" or "Title - Artist (Year)"
+  lines.forEach((line, idx) => {
     const cleanLine = line.replace(/^\d+[\.\s\-]+\s*/, '');
 
     let year: number | undefined;
@@ -220,6 +303,43 @@ export function parseBatchTracksText(rawText: string): CustomTrack[] {
   });
 
   return tracks;
+}
+
+/**
+ * Automatically resolves track titles & artists for Spotify track URLs using Spotify's public oEmbed API
+ */
+export async function resolveTrackUrlsWithOEmbed(tracks: CustomTrack[]): Promise<CustomTrack[]> {
+  const resolvedTracks: CustomTrack[] = [];
+
+  for (let i = 0; i < tracks.length; i += 15) {
+    const chunk = tracks.slice(i, i + 15);
+    const promises = chunk.map(async (track) => {
+      if (track.spotifyUrl && (track.artist === 'Spotify Link' || track.artist === 'Spotify Track' || track.artist === 'Unknown Artist')) {
+        try {
+          const oembedUrl = `https://open.spotify.com/oembed?url=${encodeURIComponent(track.spotifyUrl)}`;
+          const res = await fetch(oembedUrl);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.title) {
+              return {
+                ...track,
+                title: data.title,
+                artist: data.author_name || 'Spotify Artist',
+              };
+            }
+          }
+        } catch {
+          // Fallback to original
+        }
+      }
+      return track;
+    });
+
+    const results = await Promise.all(promises);
+    resolvedTracks.push(...results);
+  }
+
+  return resolvedTracks;
 }
 
 export async function scrapeSpotifyPlaylistWithLiveLogs(

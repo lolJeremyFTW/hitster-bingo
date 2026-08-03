@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Music, Plus, Trash2, Download, Upload, Save, Check, Disc, ExternalLink, Link as LinkIcon, FileText, Loader2, Sparkles, Layers, Terminal, LogIn, LogOut } from 'lucide-react';
 import type { CustomPlaylist, CustomTrack, Language } from '../types/hitster';
 import { getTranslation } from '../utils/translations';
-import { parseBatchTracksText, fetchSpotifyPlaylistPublic } from '../utils/spotifyImporter';
+import { parseBatchTracksText, fetchSpotifyPlaylistPublic, resolveTrackUrlsWithOEmbed } from '../utils/spotifyImporter';
 import { initiateSpotifyLogin, isSpotifyAuthenticated, getStoredClientId, logoutSpotify, fetchPlaylistTracksWithOAuth } from '../utils/spotifyAuth';
 
 interface PlaylistStudioProps {
@@ -236,12 +236,20 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
     setIsImporting(false);
   };
 
-  const handleImportBatchText = (e: React.FormEvent) => {
+  const handleImportBatchText = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!batchText.trim()) return;
 
-    const parsedTracks = parseBatchTracksText(batchText);
+    let parsedTracks = parseBatchTracksText(batchText);
     if (parsedTracks.length > 0) {
+      // Check if any tracks need URL resolving
+      const needsResolving = parsedTracks.some(t => t.artist === 'Spotify Link' || t.artist === 'Spotify Track');
+      if (needsResolving) {
+        setIsImporting(true);
+        parsedTracks = await resolveTrackUrlsWithOEmbed(parsedTracks);
+        setIsImporting(false);
+      }
+
       setActivePlaylist(prev => ({
         ...prev,
         tracks: [...parsedTracks, ...prev.tracks]
