@@ -3,7 +3,7 @@ import { Play, Pause, Eye, Shuffle, Disc, HelpCircle, Sparkles, Calendar, User, 
 import type { CustomTrack, Language } from '../types/hitster';
 import { soundEffects } from '../utils/soundEffects';
 import { spotifyPlayer, type PlayerStatus } from '../utils/spotifyPlayer';
-import { getStoredClientId, logoutSpotify, initiateSpotifyLogin } from '../utils/spotifyAuth';
+import { getStoredClientId, logoutSpotify, initiateSpotifyLogin, isSpotifyAuthenticated } from '../utils/spotifyAuth';
 
 interface BlindAudioPlayerProps {
   tracks: CustomTrack[];
@@ -53,6 +53,12 @@ export const BlindAudioPlayer: React.FC<BlindAudioPlayerProps> = ({
     });
   }, [snippetSeconds]);
 
+  // Alvast verbinden, zodat de speler bestaat op het moment dat er getikt wordt
+  // — anders valt er niets te ontgrendelen en blijft de telefoon stil.
+  useEffect(() => {
+    if (isSpotifyAuthenticated()) spotifyPlayer.prewarm();
+  }, []);
+
   // Speler netjes loskoppelen als de component verdwijnt, anders blijft er een
   // spookapparaat bij Spotify achter waar playback naartoe geroute kan worden.
   useEffect(() => {
@@ -85,6 +91,10 @@ export const BlindAudioPlayer: React.FC<BlindAudioPlayerProps> = ({
   };
 
   const togglePlayAudio = async () => {
+    // Eerste regel, synchroon binnen de tik — anders geeft de telefoon het
+    // geluid niet vrij en blijft het stil zonder foutmelding.
+    spotifyPlayer.activateFromGesture();
+
     if (!currentTrack) return;
 
     if (isPlaying) {
@@ -98,7 +108,11 @@ export const BlindAudioPlayer: React.FC<BlindAudioPlayerProps> = ({
       const startAt = startFromMiddle ? 60_000 : 0;
       setIsPlaying(true);
       setSecondsLeft(snippetSeconds);
-      await spotifyPlayer.playSnippet(currentTrack.spotifyUri, snippetSeconds, startAt);
+      const ok = await spotifyPlayer.playSnippet(currentTrack.spotifyUri, snippetSeconds, startAt);
+      if (!ok) {
+        setIsPlaying(false);
+        setSecondsLeft(snippetSeconds);
+      }
       return;
     }
 
@@ -129,6 +143,19 @@ export const BlindAudioPlayer: React.FC<BlindAudioPlayerProps> = ({
   const progressPct = ((snippetSeconds - secondsLeft) / snippetSeconds) * 100;
 
   const renderPlayerWarning = () => {
+    // De speler was nog niet verbonden tijdens de tik, dus de browser heeft het
+    // geluid niet vrijgegeven. Eén keer opnieuw tikken is genoeg.
+    if (playerStatus === 'needs-gesture') {
+      return (
+        <div className="flex items-start gap-2 text-left bg-sky-500/10 border border-sky-500/40 rounded-xl p-3">
+          <AlertTriangle className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
+          <p className="text-[11px] text-sky-200 leading-relaxed">
+            {statusDetail || (isNl ? 'Tik nog één keer op afspelen.' : 'Tap play once more.')}
+          </p>
+        </div>
+      );
+    }
+
     // Meest voorkomende oorzaak na een scope-uitbreiding: een geldig maar te
     // oud token. Direct oplosbaar, dus een knop erbij i.p.v. alleen uitleg.
     if (playerStatus === 'scope-error') {

@@ -1,8 +1,15 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { Coins, Eye, Users, Play, Pause, RotateCw, Trophy, Hand, Check, X, Settings2 } from 'lucide-react';
+import { Coins, Eye, Users, Play, Pause, RotateCw, Trophy, Hand, Check, X, Settings2, Loader2, Volume2 } from 'lucide-react';
 import type { CustomTrack, Language } from '../types/hitster';
 import { ClassicTimeline } from './ClassicTimeline';
-import { spotifyPlayer } from '../utils/spotifyPlayer';
+import {
+  spotifyPlayer,
+  fetchSpotifyDevices,
+  isIosLikeDevice,
+  type PlayerStatus,
+  type SpotifyDevice,
+} from '../utils/spotifyPlayer';
+import { isSpotifyAuthenticated } from '../utils/spotifyAuth';
 import { soundEffects } from '../utils/soundEffects';
 import {
   type ClassicGameState,
@@ -50,6 +57,13 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
   const [viewedPlayerId, setViewedPlayerId] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<ResolveOutcome['summary'] | null>(null);
   const [playerError, setPlayerError] = useState<string | null>(null);
+  const [playerStatus, setPlayerStatus] = useState<PlayerStatus>('idle');
+  const [devices, setDevices] = useState<SpotifyDevice[]>([]);
+  const [devicesLoading, setDevicesLoading] = useState(false);
+  const [showDevices, setShowDevices] = useState(false);
+  const [targetDeviceId, setTargetDeviceId] = useState<string | null>(
+    () => spotifyPlayer.getTargetDevice()
+  );
   const [showSettings, setShowSettings] = useState(false);
   const [settings, setSettings] = useState<ClassicSettings>(() => {
     const saved = localStorage.getItem('hitster_classic_settings');
@@ -70,19 +84,85 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
   const viewed = state.players.find(p => p.id === viewedPlayerId) ?? active;
   const isViewingActive = viewed?.id === active?.id;
 
+  /**
+   * Eén telefoon is de speaker: die van de host, want daar is de playlist
+   * geïmporteerd en dus de Spotify-sessie. Op de andere toestellen faalde het
+   * afspelen stil — nu tonen we daar wie het nummer draait.
+   *
+   * Zonder gevonden speler (los spelen, geen kamer) mag dit toestel gewoon.
+   */
+  const host = state.players.find(p => p.isHost);
+  const canControlPlayback = host ? host.id === localPlayerId : true;
+
+  const activeDeviceName = targetDeviceId
+    ? devices.find(d => d.id === targetDeviceId)?.name
+      ?? (isNl ? 'Gekozen speaker' : 'Selected speaker')
+    : isNl ? 'Deze browser' : 'This browser';
+
   const card = state.currentTrack ? toTimelineCard(state.currentTrack) : null;
   const correct = card && active ? correctPositions(active.timeline, card.year) : [];
 
   React.useEffect(() => {
     spotifyPlayer.setEvents({
       onStatus: (s, detail) => {
-        if (s === 'scope-error' || s === 'no-premium' || s === 'error') setPlayerError(detail ?? null);
-        else setPlayerError(null);
+        setPlayerStatus(s);
+        // 'auth-error' zat hier eerder niet bij, waardoor een toestel zonder
+        // Spotify-sessie helemaal niets te zien kreeg: geen geluid, geen melding.
+        const isProbleem =
+          s === 'scope-error' || s === 'no-premium' || s === 'error' ||
+          s === 'auth-error' || s === 'needs-gesture';
+        setPlayerError(isProbleem ? detail ?? null : null);
+        // Anders blijft de knop op "pauze" staan terwijl er niets speelt
+        if (isProbleem) setIsPlaying(false);
       },
       onTick: setSecondsLeft,
       onSnippetEnd: () => { setIsPlaying(false); setSecondsLeft(settings.snippetSeconds); },
     });
   }, [settings.snippetSeconds]);
+
+  const refreshDevices = useCallback(async () => {
+    setDevicesLoading(true);
+    try {
+      setDevices(await fetchSpotifyDevices());
+    } finally {
+      setDevicesLoading(false);
+    }
+  }, []);
+
+  const handleSelectDevice = (deviceId: string | null) => {
+    spotifyPlayer.setTargetDevice(deviceId);
+    setTargetDeviceId(deviceId);
+    setShowDevices(false);
+    setPlayerError(null);
+    setIsPlaying(false);
+    if (!deviceId) spotifyPlayer.prewarm();
+  };
+
+  /**
+   * Klaarzetten zodra de host het spel opent.
+   *
+   * Op een iPhone is de ingebouwde speler kansloos — Safari geeft het
+   * audio-element van de Web Playback SDK niet vrij. Daar tonen we meteen de
+   * speakerkeuze, zodat je de Spotify-app als speaker kunt pakken.
+   *
+   * Elders verbinden we alvast: de browser geeft geluid alleen vrij als
+   * activateElement() binnen de tik zelf gebeurt, en bestaat de speler op dat
+   * moment nog niet, dan valt er niets vrij te geven.
+   */
+  useEffect(() => {
+    if (!canControlPlayback) return;
+    if (!isSpotifyAuthenticated()) return;
+
+    if (spotifyPlayer.getTargetDevice()) return;
+
+    if (isIosLikeDevice()) {
+      setShowDevices(true);
+      void refreshDevices();
+      return;
+    }
+
+    spotifyPlayer.prewarm();
+  }, [canControlPlayback, refreshDevices]);
 
   const handleDraw = useCallback(() => {
     const track = drawTrack(tracks, state.usedTrackIds, state.players);
@@ -94,6 +174,10 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
   }, [tracks, state.usedTrackIds, state.players, setState]);
 
   const handlePlay = useCallback(async () => {
+    // MOET de eerste regel blijven: mobiele browsers geven het geluid alleen
+    // vrij als dit synchroon binnen de tik gebeurt, dus vóór elke await.
+    spotifyPlayer.activateFromGesture();
+
     if (!state.currentTrack?.spotifyUri) return;
     if (isPlaying) { spotifyPlayer.pause(); setIsPlaying(false); return; }
 
@@ -107,7 +191,19 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
 
     setIsPlaying(true);
     setSecondsLeft(settings.snippetSeconds);
-    await spotifyPlayer.playSnippet(state.currentTrack.spotifyUri, settings.snippetSeconds, startAt);
+
+    const ok = await spotifyPlayer.playSnippet(
+      state.currentTrack.spotifyUri,
+      settings.snippetSeconds,
+      startAt
+    );
+
+    // Niet gaan spelen? Dan mag de knop niet op "pauze" blijven staan — dat was
+    // precies waarom het leek alsof er niets gebeurde.
+    if (!ok) {
+      setIsPlaying(false);
+      setSecondsLeft(settings.snippetSeconds);
+    }
   }, [state.currentTrack, isPlaying, settings]);
 
   const handlePlace = (position: number) => {
@@ -270,8 +366,93 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
         </div>
       )}
 
-      {playerError && (
-        <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-[11px] text-amber-200">
+      {/* Speakerkeuze. Op iPhone is dit geen extraatje maar de enige route die
+          werkt: Safari speelt de Web Playback SDK niet betrouwbaar af, dus laten
+          we de Spotify-app op een toestel het werk doen via Spotify Connect. */}
+      {canControlPlayback && isSpotifyAuthenticated() && (
+        <div className="rounded-2xl bg-slate-900/90 border border-slate-700 p-2.5 space-y-2">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                const opening = !showDevices;
+                setShowDevices(opening);
+                if (opening) void refreshDevices();
+              }}
+              className="flex-1 min-w-0 flex items-center gap-1.5 text-left"
+            >
+              <Volume2 className="w-4 h-4 text-green-400 shrink-0" />
+              <span className="text-[11px] font-bold text-slate-200 truncate">
+                {activeDeviceName}
+              </span>
+            </button>
+            <button
+              onClick={() => { setShowDevices(true); void refreshDevices(); }}
+              disabled={devicesLoading}
+              className="shrink-0 px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-[10px] font-black uppercase text-slate-200 flex items-center gap-1"
+            >
+              {devicesLoading
+                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                : <RotateCw className="w-3.5 h-3.5" />}
+              {isNl ? 'Speakers' : 'Speakers'}
+            </button>
+          </div>
+
+          {showDevices && (
+            <div className="space-y-1.5">
+              <p className="text-[10px] text-slate-400 leading-relaxed">
+                {isNl
+                  ? 'Staat je toestel er niet bij? Open de Spotify-app, speel daar één seconde iets af, en tik dan op Speakers.'
+                  : 'Device missing? Open the Spotify app, play something for a second, then tap Speakers.'}
+              </p>
+
+              {devices.map(d => (
+                <button
+                  key={d.id}
+                  onClick={() => handleSelectDevice(d.id)}
+                  className={`w-full text-left px-2.5 py-2 rounded-lg border text-[11px] font-bold flex items-center justify-between gap-2 ${
+                    targetDeviceId === d.id
+                      ? 'bg-green-500/15 border-green-500/50 text-green-200'
+                      : 'bg-slate-950 border-slate-700 text-slate-200'
+                  }`}
+                >
+                  <span className="truncate">{d.name}</span>
+                  <span className="shrink-0 text-[9px] uppercase text-slate-400">{d.type}</span>
+                </button>
+              ))}
+
+              {devices.length === 0 && !devicesLoading && (
+                <p className="text-[11px] text-amber-200">
+                  {isNl
+                    ? 'Geen toestellen gevonden. Open de Spotify-app en speel daar even iets af.'
+                    : 'No devices found. Open the Spotify app and play something briefly.'}
+                </p>
+              )}
+
+              {/* Op iOS werkt dit niet, dus daar bieden we het niet aan */}
+              {!isIosLikeDevice() && (
+                <button
+                  onClick={() => handleSelectDevice(null)}
+                  className={`w-full text-left px-2.5 py-2 rounded-lg border text-[11px] font-bold ${
+                    targetDeviceId === null
+                      ? 'bg-green-500/15 border-green-500/50 text-green-200'
+                      : 'bg-slate-950 border-slate-700 text-slate-200'
+                  }`}
+                >
+                  {isNl ? 'Deze browser (ingebouwde speler)' : 'This browser (built-in player)'}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Alleen op het toestel dat daadwerkelijk afspeelt — de rest kan er niets mee */}
+      {playerError && canControlPlayback && (
+        <div className={`p-2.5 rounded-xl border text-[11px] leading-relaxed ${
+          playerStatus === 'needs-gesture'
+            ? 'bg-sky-500/15 border-sky-500/40 text-sky-200'
+            : 'bg-amber-500/15 border-amber-500/40 text-amber-200'
+        }`}>
           {playerError}
         </div>
       )}
@@ -301,16 +482,31 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
           </button>
         ) : (
           <>
-            <button
-              onClick={handlePlay}
-              disabled={!state.currentTrack.spotifyUri}
-              className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white font-black text-xs uppercase flex items-center gap-1.5"
-            >
-              {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 fill-current" />}
-              {isPlaying
-                ? `${secondsLeft}s`
-                : (isNl ? `Speel ${settings.snippetSeconds}s` : `Play ${settings.snippetSeconds}s`)}
-            </button>
+            {canControlPlayback ? (
+              <button
+                onClick={handlePlay}
+                disabled={!state.currentTrack.spotifyUri || playerStatus === 'loading'}
+                className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white font-black text-xs uppercase flex items-center gap-1.5"
+              >
+                {playerStatus === 'loading'
+                  ? <Loader2 className="w-4 h-4 animate-spin" />
+                  : isPlaying
+                    ? <Pause className="w-4 h-4" />
+                    : <Play className="w-4 h-4 fill-current" />}
+                {playerStatus === 'loading'
+                  ? (isNl ? 'Verbinden…' : 'Connecting…')
+                  : isPlaying
+                    ? `${secondsLeft}s`
+                    : (isNl ? `Speel ${settings.snippetSeconds}s` : `Play ${settings.snippetSeconds}s`)}
+              </button>
+            ) : (
+              <div className="px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-slate-400 font-bold text-[11px] flex items-center gap-1.5">
+                <Volume2 className="w-4 h-4 text-slate-500" />
+                {isNl
+                  ? `${host?.name ?? 'De host'} speelt het nummer af`
+                  : `${host?.name ?? 'The host'} plays the track`}
+              </div>
+            )}
 
             {state.phase !== 'revealed' && isMyTurn && (
               <label className="flex items-center gap-1.5 text-[11px] text-slate-300 cursor-pointer">
