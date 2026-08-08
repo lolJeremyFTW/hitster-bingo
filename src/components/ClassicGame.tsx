@@ -13,7 +13,6 @@ import { isSpotifyAuthenticated } from '../utils/spotifyAuth';
 import { soundEffects } from '../utils/soundEffects';
 import {
   type ClassicGameState,
-  type ResolveOutcome,
   CARDS_TO_WIN,
   canSteal,
   correctPositions,
@@ -56,7 +55,6 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
   const [isPlaying, setIsPlaying] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(snippetSeconds);
   const [viewedPlayerId, setViewedPlayerId] = useState<string | null>(null);
-  const [outcome, setOutcome] = useState<ResolveOutcome['summary'] | null>(null);
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [playerStatus, setPlayerStatus] = useState<PlayerStatus>('idle');
   const [devices, setDevices] = useState<SpotifyDevice[]>([]);
@@ -104,6 +102,11 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
 
   const card = state.currentTrack ? toTimelineCard(state.currentTrack) : null;
   const correct = card && active ? correctPositions(active.timeline, card.year) : [];
+
+  // Uit de gedeelde staat, met fase-slot: zo verschijnt én verdwijnt de uitslag
+  // op alle toestellen tegelijk, en kan een achtergebleven paneel nooit het
+  // volgende geheime nummer verklappen.
+  const outcome = state.phase === 'revealed' ? state.lastOutcome ?? null : null;
 
   React.useEffect(() => {
     spotifyPlayer.setEvents({
@@ -170,8 +173,7 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
   const handleDraw = useCallback(() => {
     const track = drawTrack(tracks, state.usedTrackIds, state.players);
     if (!track) return;
-    setState(prev => ({ ...prev, currentTrack: track, phase: 'listening', placedPosition: null, steals: [] }));
-    setOutcome(null);
+    setState(prev => ({ ...prev, currentTrack: track, phase: 'listening', placedPosition: null, steals: [], lastOutcome: null }));
     setViewedPlayerId(null);
     soundEffects.playSpinSelected();
   }, [tracks, state.usedTrackIds, state.players, setState]);
@@ -223,15 +225,15 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
   const handleReveal = () => {
     spotifyPlayer.pause();
     setIsPlaying(false);
+    // De uitslag reist mee in result.state.lastOutcome, zodat álle toestellen
+    // hem zien — niet alleen degene die op de knop drukte
     const result = resolveTurn(state);
     setState(() => result.state);
-    setOutcome(result.summary);
     if (result.summary.placementCorrect) soundEffects.playBingoVictory();
   };
 
   const handleNext = () => {
     setState(prev => nextTurn(prev));
-    setOutcome(null);
     setViewedPlayerId(null);
     setSecondsLeft(snippetSeconds);
   };
@@ -573,11 +575,15 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
             ? 'bg-green-500/15 border-green-500/50 text-green-200'
             : 'bg-red-500/15 border-red-500/40 text-red-200'
         }`}>
+          {/* Onmiskenbaar oordeel, zodat niemand aan tafel hoeft te twijfelen */}
           <div className="flex items-center gap-2 mb-1">
-            {outcome.placementCorrect ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
-            <span className="text-sm">
-              {card.title} — {card.artist} ({card.year})
+            {outcome.placementCorrect ? <Check className="w-5 h-5" /> : <X className="w-5 h-5" />}
+            <span className="text-base font-black uppercase tracking-wide">
+              {outcome.placementCorrect ? (isNl ? 'Goed!' : 'Correct!') : (isNl ? 'Fout' : 'Wrong')}
             </span>
+          </div>
+          <div className="text-sm mb-1">
+            {card.title} — {card.artist} <span className="font-black">({card.year})</span>
           </div>
           <p>
             {outcome.placementCorrect
@@ -588,6 +594,15 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
                   : `Wrong! ${state.players.find(p => p.id === outcome.successfulStealerId)?.name} steals it.`)
               : (isNl ? 'Fout geplaatst. De kaart gaat weg.' : 'Wrong placement. The card is discarded.')}
           </p>
+          {/* Bij fout: laat zien waar hij wél hoorde — de groene vakjes in de
+              tijdlijn hieronder wijzen dezelfde plek aan */}
+          {!outcome.placementCorrect && correct.length > 0 && (
+            <p className="mt-1">
+              {isNl
+                ? `De kaart hoorde op plek ${correct.map(p => p + 1).join(' of ')} (groen in de tijdlijn).`
+                : `The card belonged at slot ${correct.map(p => p + 1).join(' or ')} (green in the timeline).`}
+            </p>
+          )}
           {outcome.tokenEarnedBy && (
             <p className="mt-1 text-amber-300 flex items-center gap-1">
               <Coins className="w-3.5 h-3.5" />

@@ -70,6 +70,13 @@ export interface ClassicGameState {
   usedTrackIds: string[];
   winnerId: string | null;
   roundNumber: number;
+  /**
+   * Uitslag van de zojuist onthulde beurt. Onderdeel van de gedeelde staat,
+   * niet van lokale component-state: anders blijft hij hangen op toestellen
+   * die niet zelf op "volgende" drukten, en toont het uitslagpaneel bij de
+   * volgende kaart doodleuk het nieuwe geheime nummer in het groen.
+   */
+  lastOutcome?: TurnSummary | null;
 }
 
 /** Standaard startvoorraad munten; instelbaar bij het openen van de kamer. */
@@ -154,16 +161,18 @@ export function correctPositions(timeline: TimelineCard[], year: number): number
   return result;
 }
 
+/** Wat er gebeurde in de laatste beurt, om aan tafel te laten zien */
+export interface TurnSummary {
+  placementCorrect: boolean;
+  cardWonBy: string | null;
+  tokenEarnedBy: string | null;
+  failedStealers: string[];
+  successfulStealerId: string | null;
+}
+
 export interface ResolveOutcome {
   state: ClassicGameState;
-  /** Wat er gebeurde, om aan tafel te laten zien */
-  summary: {
-    placementCorrect: boolean;
-    cardWonBy: string | null;
-    tokenEarnedBy: string | null;
-    failedStealers: string[];
-    successfulStealerId: string | null;
-  };
+  summary: TurnSummary;
 }
 
 /**
@@ -180,15 +189,16 @@ export function resolveTurn(state: ClassicGameState): ResolveOutcome {
   const card = track ? toTimelineCard(track) : null;
 
   if (!card || state.placedPosition === null || !active) {
+    const summary: TurnSummary = {
+      placementCorrect: false,
+      cardWonBy: null,
+      tokenEarnedBy: null,
+      failedStealers: [],
+      successfulStealerId: null,
+    };
     return {
-      state: { ...state, phase: 'revealed' },
-      summary: {
-        placementCorrect: false,
-        cardWonBy: null,
-        tokenEarnedBy: null,
-        failedStealers: [],
-        successfulStealerId: null,
-      },
+      state: { ...state, phase: 'revealed', lastOutcome: summary },
+      summary,
     };
   }
 
@@ -241,20 +251,23 @@ export function resolveTurn(state: ClassicGameState): ResolveOutcome {
 
   const winner = players.find(p => p.timeline.length >= CARDS_TO_WIN);
 
+  const summary: TurnSummary = {
+    placementCorrect,
+    cardWonBy: placementCorrect ? active.id : successfulStealerId,
+    tokenEarnedBy: state.claimedTitleArtist ? active.id : null,
+    failedStealers,
+    successfulStealerId,
+  };
+
   return {
     state: {
       ...state,
       players,
       phase: 'revealed',
       winnerId: winner ? winner.id : null,
+      lastOutcome: summary,
     },
-    summary: {
-      placementCorrect,
-      cardWonBy: placementCorrect ? active.id : successfulStealerId,
-      tokenEarnedBy: state.claimedTitleArtist ? active.id : null,
-      failedStealers,
-      successfulStealerId,
-    },
+    summary,
   };
 }
 
@@ -274,6 +287,7 @@ export function nextTurn(state: ClassicGameState): ClassicGameState {
     steals: [],
     usedTrackIds,
     roundNumber: state.roundNumber + 1,
+    lastOutcome: null,
   };
 }
 
