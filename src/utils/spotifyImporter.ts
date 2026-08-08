@@ -114,6 +114,9 @@ export async function fetchSpotifyPlaylistPublic(playlistUrlOrId: string): Promi
                   artist: artist ? artist.trim() : 'Unknown Artist',
                   year,
                   audioPreviewUrl: obj.audioPreview?.url || obj.preview_url || undefined,
+                  // Zonder URI is een nummer niet af te spelen; de ID hebben we
+                  // hier al, dus die kunnen we net zo goed meteen meegeven
+                  spotifyUri: `spotify:track:${trackId}`,
                   spotifyUrl: `https://open.spotify.com/track/${trackId}`
                 });
               }
@@ -179,6 +182,7 @@ export function parseBatchTracksText(rawText: string): CustomTrack[] {
         id: trackId,
         title: title || `Track ${idx + 1}`,
         artist: artist !== 'Spotify Track' ? artist : 'Spotify Link',
+        spotifyUri: `spotify:track:${trackId}`,
         spotifyUrl: `https://open.spotify.com/track/${trackId}`
       });
     });
@@ -567,6 +571,9 @@ export async function fetchAllTracksFromSpotifyAPI(
             artist: artist.trim(),
             year,
             audioPreviewUrl: trackObj.preview_url || undefined,
+            // Alleen zetten als Spotify een echt track-ID gaf; de fallback-id
+            // hierboven is verzonnen en levert een URI op die nergens bestaat
+            spotifyUri: trackObj.uri || (trackObj.id ? `spotify:track:${trackObj.id}` : undefined),
             spotifyUrl: trackObj.external_urls?.spotify || `https://open.spotify.com/track/${trackObj.id}`
           });
         }
