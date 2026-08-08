@@ -5,7 +5,7 @@ import { DiscoBallSpinner } from './components/DiscoBallSpinner';
 import { HitsterDiscoBall } from './components/HitsterDiscoBall';
 import { AnswerBox } from './components/AnswerBox';
 import { ClassicGame } from './components/ClassicGame';
-import { createInitialState, createPlayer, DEFAULT_START_TOKENS, type ClassicGameState } from './utils/classicGame';
+import { createInitialState, createPlayer, mergeRoomPlayers, DEFAULT_START_TOKENS, type ClassicGameState } from './utils/classicGame';
 import { JoinRoomModal } from './components/JoinRoomModal';
 import { useRoom } from './utils/useRoom';
 import { Timer25s } from './components/Timer25s';
@@ -100,24 +100,26 @@ export function App() {
 
   // Spelers uit de lobby overnemen in de partij, met behoud van wat ze al
   // hebben gewonnen. Wie de kamer verlaat verdwijnt ook uit het spel.
+  //
+  // De volgorde van de gedeelde spelstaat is hier heilig — zie mergeRoomPlayers.
+  // De host deelt het resultaat met een revisie-ophoging: één schrijver, zodat
+  // alle toestellen op dezelfde lijst uitkomen ook als hun kamerlijsten net
+  // anders gesorteerd binnenkwamen.
   useEffect(() => {
     if (!isInGame || gameMode !== 'classic' || room.players.length === 0) return;
+    if (!classicState) return;
 
-    setClassicState(prev => {
-      if (!prev) return prev;
-      const bestaand = new Map(prev.players.map(p => [p.id, p]));
-      const samen = room.players.map(rp =>
-        bestaand.get(rp.id) ?? createPlayer(rp.id, rp.name, rp.isHost, prev.startTokens)
-      );
+    const merged = mergeRoomPlayers(classicState, room.players);
+    if (merged === classicState) return;
 
-      const zelfde =
-        samen.length === prev.players.length &&
-        samen.every((p, i) => p.id === prev.players[i].id);
-      if (zelfde) return prev;
-
-      return { ...prev, players: samen };
-    });
-  }, [room.players, isInGame, gameMode]);
+    if (room.isHost && room.roomCode) {
+      updateClassic(prev => mergeRoomPlayers(prev, room.players));
+    } else {
+      // Niet-hosts passen alleen lokaal toe (geen broadcast, geen rev-oorlog);
+      // de eerstvolgende host-broadcast is toch leidend
+      setClassicState(prev => (prev ? mergeRoomPlayers(prev, room.players) : prev));
+    }
+  }, [room.players, room.isHost, room.roomCode, isInGame, gameMode, classicState, updateClassic]);
 
   const isClassicMode = gameMode === 'classic';
   const isHitsterMode = gameMode === 'sideA' || gameMode === 'sideB';

@@ -315,6 +315,62 @@ export function countPlayable(tracks: CustomTrack[]): number {
   return tracks.filter(t => t.year && t.spotifyUri).length;
 }
 
+/** Het minimale dat we van een kamerlid moeten weten om mee te spelen */
+export interface RoomMember {
+  id: string;
+  name: string;
+  isHost: boolean;
+  joinedAt?: string;
+}
+
+/**
+ * Kamerleden samenvoegen met de spelstaat, met de volgorde van de spelstaat
+ * als waarheid.
+ *
+ * De kamerlijst kan per toestel in een andere volgorde binnenkomen (gelijke
+ * joined_at bij snel achter elkaar joinen). Wie de spelerslijst op de lokale
+ * kamervolgorde herbouwt, krijgt toestellen waar dezelfde activePlayerIndex
+ * naar verschillende spelers wijst: iedereen ziet iemand anders aan de beurt,
+ * niemand mag trekken, en zonder zet komt er ook geen broadcast die het
+ * rechttrekt.
+ *
+ * Daarom: bestaande volgorde behouden, nieuwkomers deterministisch achteraan,
+ * en de beurt reist mee met de pérsoon in plaats van met de positie.
+ *
+ * Geeft exact `state` terug als er niets wijzigt, zodat de aanroeper weet dat
+ * er niets te schrijven valt.
+ */
+export function mergeRoomPlayers(
+  state: ClassicGameState,
+  members: RoomMember[]
+): ClassicGameState {
+  const kamer = new Set(members.map(m => m.id));
+  const bekend = new Set(state.players.map(p => p.id));
+
+  const behouden = state.players.filter(p => kamer.has(p.id));
+  const nieuw = members
+    .filter(m => !bekend.has(m.id))
+    .sort((a, b) =>
+      (a.joinedAt ?? '').localeCompare(b.joinedAt ?? '') || a.id.localeCompare(b.id)
+    )
+    .map(m => createPlayer(m.id, m.name, m.isHost, state.startTokens));
+
+  const samen = [...behouden, ...nieuw];
+
+  const zelfde =
+    samen.length === state.players.length &&
+    samen.every((p, i) => p.id === state.players[i].id);
+  if (zelfde) return state;
+
+  const actiefId = state.players[state.activePlayerIndex]?.id;
+  const idx = samen.findIndex(p => p.id === actiefId);
+  const activePlayerIndex = idx >= 0
+    ? idx
+    : samen.length > 0 ? state.activePlayerIndex % samen.length : 0;
+
+  return { ...state, players: samen, activePlayerIndex };
+}
+
 /** Mag deze speler nu HITSTER roepen? */
 export function canSteal(state: ClassicGameState, playerId: string, position: number): boolean {
   if (state.phase !== 'placed') return false;

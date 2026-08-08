@@ -91,7 +91,11 @@ export function useRoom(): UseRoomResult {
       .from('players')
       .select('id,name,is_host,joined_at')
       .eq('room_code', code)
-      .order('joined_at', { ascending: true });
+      // Het id als scheidsrechter bij gelijke joined_at: zonder die tweede
+      // sortering geeft Postgres per toestel een andere volgorde terug, en dan
+      // wijst dezelfde activePlayerIndex overal naar een andere speler
+      .order('joined_at', { ascending: true })
+      .order('id', { ascending: true });
 
     if (err) { setError(describe(err)); return; }
 
