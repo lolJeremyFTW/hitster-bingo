@@ -46,20 +46,30 @@ interface UseRoomResult {
   joinRoom: (code: string, name: string) => Promise<string | null>;
   updateSharedState: (state: unknown) => Promise<void>;
   leaveRoom: () => Promise<void>;
+  /**
+   * Gezet wanneer een herladen telefoon automatisch terug de kamer in is
+   * gestapt; vertelt de app welk spel er weer geopend moet worden.
+   */
+  restoredMode: string | null;
 }
 
-const PLAYER_ID_KEY = 'hitster_room_player_id';
+/** Kamercode + speler-id van deze tab, zodat een refresh je niet verdubbelt */
+const SESSION_KEY = 'hitster_room_session';
+
+function saveSession(code: string, playerId: string) {
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify({ code, playerId }));
+}
 
 export function useRoom(): UseRoomResult {
   const [status, setStatus] = useState<RoomStatus>('idle');
   const [error, setError] = useState<string | null>(null);
   const [roomCode, setRoomCode] = useState<string | null>(null);
   const [players, setPlayers] = useState<RoomPlayer[]>([]);
-  // Bewust niet uit sessionStorage voorladen: die id hoort bij een kamer uit
-  // een eerdere sessie, die allang opgeruimd kan zijn. Een herladen speler
-  // hoort gewoon opnieuw te joinen.
+  // Niet zomaar uit sessionStorage voorladen: eerst checkt restoreSession bij
+  // de database of kamer én spelersrij nog bestaan. Pas dan stap je terug in.
   const [myPlayerId, setMyPlayerId] = useState<string | null>(null);
   const [isHost, setIsHost] = useState(false);
+  const [restoredMode, setRestoredMode] = useState<string | null>(null);
   const [sharedState, setSharedState] = useState<Record<string, unknown> | null>(null);
   const [liveScores, setLiveScores] = useState<Record<string, { marked: number; bingos: number }>>({});
 
@@ -170,7 +180,7 @@ export function useRoom(): UseRoomResult {
     if (playerErr) { setError(describe(playerErr)); return false; }
 
     const pid = player.id as string;
-    sessionStorage.setItem(PLAYER_ID_KEY, pid);
+    saveSession(code, pid);
     setMyPlayerId(pid);
     setIsHost(true);
     setRoomCode(code);
@@ -207,18 +217,50 @@ export function useRoom(): UseRoomResult {
       return null;
     }
 
-    const { data: player, error: playerErr } = await sb
+    // Zelfde naam als een bestaande speler in deze kamer? Dan ben jij dat —
+    // een telefoon die herlaadde of de browser opnieuw opende. Neem die rij
+    // over in plaats van een tweede "Jorn" naast de eerste te zetten.
+    const { data: existingPlayers, error: listErr } = await sb
       .from('players')
-      .insert({ room_code: code, name, is_host: false })
-      .select('id')
-      .single();
+      .select('id,name,is_host,joined_at')
+      .eq('room_code', code)
+      .order('joined_at', { ascending: true })
+      .order('id', { ascending: true });
 
-    if (playerErr) { setError(describe(playerErr)); return null; }
+    if (listErr) { setError(describe(listErr)); return null; }
 
-    const pid = player.id as string;
-    sessionStorage.setItem(PLAYER_ID_KEY, pid);
+    const wanted = name.trim().toLowerCase();
+    const matches = (existingPlayers ?? []).filter(
+      p => (p.name as string).trim().toLowerCase() === wanted
+    );
+
+    let pid: string;
+    let amHost = false;
+
+    if (matches.length > 0) {
+      // De oudste rij is het origineel — daar hangt de tijdlijn aan
+      pid = matches[0].id as string;
+      amHost = !!matches[0].is_host;
+
+      // Spoken van eerdere refreshes meteen opruimen
+      const ghosts = matches.slice(1).map(p => p.id as string);
+      if (ghosts.length > 0) {
+        await sb.from('players').delete().in('id', ghosts);
+      }
+    } else {
+      const { data: player, error: playerErr } = await sb
+        .from('players')
+        .insert({ room_code: code, name, is_host: false })
+        .select('id')
+        .single();
+
+      if (playerErr) { setError(describe(playerErr)); return null; }
+      pid = player.id as string;
+    }
+
+    saveSession(code, pid);
     setMyPlayerId(pid);
-    setIsHost(false);
+    setIsHost(amHost);
     setRoomCode(code);
     setSharedState((room.state as Record<string, unknown>) ?? null);
     setStatus('connected');
@@ -226,6 +268,58 @@ export function useRoom(): UseRoomResult {
     await refreshPlayers(code);
     subscribe(code);
     return (room.mode as string) ?? null;
+  }, [refreshPlayers, subscribe]);
+
+  /**
+   * Een herladen tab stapt automatisch terug in zijn kamer, als dezelfde
+   * speler. Eerst verifiëren bij de database dat kamer en spelersrij nog
+   * bestaan — een opgeruimde kamer is echt voorbij, dan gewoon naar de lobby.
+   */
+  useEffect(() => {
+    const sb = getSupabase();
+    if (!sb || joinGuard.current) return;
+
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return;
+
+    let saved: { code?: string; playerId?: string };
+    try {
+      saved = JSON.parse(raw);
+    } catch {
+      sessionStorage.removeItem(SESSION_KEY);
+      return;
+    }
+    if (!saved.code || !saved.playerId) {
+      sessionStorage.removeItem(SESSION_KEY);
+      return;
+    }
+
+    void (async () => {
+      const { data: room } = await sb
+        .from('rooms')
+        .select('code,mode,state')
+        .eq('code', saved.code!)
+        .maybeSingle();
+      if (!room) { sessionStorage.removeItem(SESSION_KEY); return; }
+
+      const { data: me } = await sb
+        .from('players')
+        .select('id,is_host')
+        .eq('id', saved.playerId!)
+        .maybeSingle();
+      if (!me) { sessionStorage.removeItem(SESSION_KEY); return; }
+
+      joinGuard.current = true;
+      setMyPlayerId(me.id as string);
+      setIsHost(!!me.is_host);
+      setRoomCode(saved.code!);
+      setSharedState((room.state as Record<string, unknown>) ?? null);
+      setStatus('connected');
+      setRestoredMode((room.mode as string) ?? null);
+
+      await refreshPlayers(saved.code!);
+      subscribe(saved.code!);
+    })();
   }, [refreshPlayers, subscribe]);
 
   const broadcastScore = useCallback((marked: number, bingos: number) => {
@@ -258,7 +352,8 @@ export function useRoom(): UseRoomResult {
       await sb.from('players').delete().eq('id', myPlayerId);
     }
     joinGuard.current = false;
-    sessionStorage.removeItem(PLAYER_ID_KEY);
+    sessionStorage.removeItem(SESSION_KEY);
+    setRestoredMode(null);
     setMyPlayerId(null);
     setRoomCode(null);
     setPlayers([]);
@@ -275,5 +370,6 @@ export function useRoom(): UseRoomResult {
     status, error, roomCode, players, myPlayerId, isHost,
     sharedState, liveScores, broadcastScore,
     createRoom, joinRoom, updateSharedState, leaveRoom,
+    restoredMode,
   };
 }

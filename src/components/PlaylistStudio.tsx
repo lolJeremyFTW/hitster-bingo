@@ -5,7 +5,8 @@ import { getTranslation } from '../utils/translations';
 import { parseBatchTracksText, fetchSpotifyPlaylistPublic, resolveTrackUrlsWithOEmbed, autoEnrichTracks } from '../utils/spotifyImporter';
 import { resolveOriginalYears } from '../utils/yearResolver';
 import { findHitsterPlaylists, type FoundPlaylist } from '../data/hitsterEditions';
-import { initiateSpotifyLogin, isSpotifyAuthenticated, getStoredClientId, logoutSpotify, fetchPlaylistTracksWithOAuth, getRedirectUri, isLocalhostOrigin, fetchSpotifyProfile, matchTracksToSpotify, getValidAccessToken } from '../utils/spotifyAuth';
+import { initiateSpotifyLogin, isSpotifyAuthenticated, getStoredClientId, logoutSpotify, fetchPlaylistTracksWithOAuth, getRedirectUri, isLocalhostOrigin, fetchSpotifyProfile, matchTracksToSpotify, getValidAccessToken, extractPlaylistId } from '../utils/spotifyAuth';
+import { loadActivePlaylist, upsertPlaylist } from '../utils/playlistStore';
 
 interface PlaylistStudioProps {
   language: Language;
@@ -19,7 +20,6 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
   onSelectPlaylist
 }) => {
   const [activeTab, setActiveTab] = useState<'single' | 'spotify' | 'text'>('spotify');
-  const [playlists, setPlaylists] = useState<CustomPlaylist[]>([]);
   const [activePlaylist, setActivePlaylist] = useState<CustomPlaylist>({
     id: 'custom_1',
     name: 'Mijn Kampvuur Hitster Playlist',
@@ -86,18 +86,9 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   useEffect(() => {
-    const local = localStorage.getItem('hitster_custom_playlists');
-    if (local) {
-      try {
-        const parsed = JSON.parse(local);
-        setPlaylists(parsed);
-        if (parsed.length > 0) {
-          setActivePlaylist(parsed[0]);
-        }
-      } catch {
-        // Fallback
-      }
-    }
+    // Via de store: die herstelt ook ontbrekende spotifyUri's van oude imports
+    const active = loadActivePlaylist();
+    if (active) setActivePlaylist(active);
     // Check auth status on mount
     setIsLoggedIn(isSpotifyAuthenticated());
   }, []);
@@ -166,7 +157,9 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
 
       if (result && result.tracks.length > 0) {
         const newPlaylist: CustomPlaylist = {
-          id: `spotify_${Date.now()}`,
+          // Stabiel id per bron-playlist: opnieuw importeren wérkt de opgeslagen
+          // lijst bij in plaats van er een zoveelste kopie naast te zetten
+          id: `spotify_${extractPlaylistId(spotifyUrl) ?? Date.now()}`,
           name: result.name || 'Spotify Playlist',
           description: `Spotify Import (${result.tracks.length} nummers)`,
           createdAt: new Date().toISOString(),
@@ -255,7 +248,7 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
 
       if (finalTracks.length > 0) {
         const newPlaylist: CustomPlaylist = {
-          id: `embed_${Date.now()}`,
+          id: `embed_${extractPlaylistId(spotifyUrl) ?? Date.now()}`,
           name: 'Spotify Playlist',
           description: `Snel Geïmporteerd (${finalTracks.length} nummers)`,
           createdAt: new Date().toISOString(),
@@ -405,9 +398,7 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
   };
 
   const handleSavePlaylist = () => {
-    const updated = [activePlaylist, ...playlists.filter(p => p.id !== activePlaylist.id)];
-    setPlaylists(updated);
-    localStorage.setItem('hitster_custom_playlists', JSON.stringify(updated));
+    upsertPlaylist(activePlaylist);
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 2000);
 

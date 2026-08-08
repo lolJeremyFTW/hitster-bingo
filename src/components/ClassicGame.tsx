@@ -484,15 +484,23 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
       {/* Speler en fragment */}
       <div className="flex flex-wrap items-center gap-2 p-2 sm:p-3 rounded-2xl bg-slate-900/90 border border-slate-700">
         {!state.currentTrack ? (
+          // De HOST trekt elke kaart, ook voor andermans beurt. De afspeellijst
+          // leeft namelijk alleen op het host-toestel; liet je de actieve speler
+          // zelf trekken, dan kwam de kaart uit het lege deck van diens telefoon
+          // en was er voor niemand iets af te spelen.
           <button
             onClick={handleDraw}
-            disabled={!isMyTurn}
+            disabled={!canControlPlayback}
             className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white font-black text-xs uppercase tracking-wider flex items-center gap-1.5"
           >
             <RotateCw className="w-4 h-4" />
-            {isMyTurn
-              ? (isNl ? 'Trek een kaart' : 'Draw a card')
-              : (isNl ? `${active?.name} is aan de beurt` : `${active?.name}'s turn`)}
+            {canControlPlayback
+              ? isMyTurn
+                ? (isNl ? 'Trek een kaart' : 'Draw a card')
+                : (isNl ? `Trek een kaart voor ${active?.name}` : `Draw a card for ${active?.name}`)
+              : (isNl
+                  ? `${host?.name ?? 'De host'} trekt de kaart…`
+                  : `${host?.name ?? 'The host'} draws the card…`)}
           </button>
         ) : (
           <>

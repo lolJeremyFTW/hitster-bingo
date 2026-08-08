@@ -8,6 +8,7 @@ import { ClassicGame } from './components/ClassicGame';
 import { createInitialState, createPlayer, mergeRoomPlayers, DEFAULT_START_TOKENS, type ClassicGameState } from './utils/classicGame';
 import { JoinRoomModal } from './components/JoinRoomModal';
 import { useRoom } from './utils/useRoom';
+import { loadActivePlaylist, upsertPlaylist } from './utils/playlistStore';
 import { Timer25s } from './components/Timer25s';
 import { BingoGrid } from './components/BingoGrid';
 import { VictoryModal } from './components/VictoryModal';
@@ -137,6 +138,32 @@ export function App() {
   const activeTrackDeck = activePlaylist && activePlaylist.tracks.length > 0
     ? activePlaylist.tracks
     : OFFICIAL_HITSTER_DECK;
+
+  // De laatst gebruikte afspeellijst overleeft nu een refresh. Voorheen begon
+  // elke sessie op null en viel het spel stil terug op het ingebouwde deck —
+  // dat geen Spotify-koppelingen heeft, waardoor het leek alsof de import weg
+  // was en je hem opnieuw moest doen.
+  useEffect(() => {
+    const restored = loadActivePlaylist();
+    if (restored) setActivePlaylist(restored);
+  }, []);
+
+  /** Elke keuze meteen vastleggen; de "Opslaan"-knop vergeten mag geen dataverlies zijn */
+  const handleSelectPlaylist = useCallback((playlist: CustomPlaylist) => {
+    setActivePlaylist(playlist);
+    upsertPlaylist(playlist);
+  }, []);
+
+  // Een herladen telefoon die via restoreSession terug de kamer in stapte moet
+  // ook meteen weer in het spel staan, niet in de lobby. Eén keer toepassen:
+  // wie daarna bewust het spel verlaat, willen we niet terug naar binnen duwen.
+  const restoreApplied = useRef(false);
+  useEffect(() => {
+    if (restoreApplied.current || !room.restoredMode || isInGame) return;
+    restoreApplied.current = true;
+    setGameMode(room.restoredMode as GameMode);
+    setIsInGame(true);
+  }, [room.restoredMode, isInGame]);
 
   useEffect(() => {
     // Handle Spotify OAuth callback first
@@ -538,7 +565,7 @@ export function App() {
         <PlaylistStudio
           language={language}
           onClose={() => setShowPlaylistStudio(false)}
-          onSelectPlaylist={setActivePlaylist}
+          onSelectPlaylist={handleSelectPlaylist}
         />
       )}
 
