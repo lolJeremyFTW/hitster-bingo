@@ -380,6 +380,9 @@ export function canSteal(state: ClassicGameState, playerId: string, position: nu
   if (state.steals.some(s => s.playerId === playerId)) return false;
   // Eén munt per positie; een ander moet een andere plek kiezen
   if (state.steals.some(s => s.position === position)) return false;
+  // Stelen is beweren dat de speler het fout heeft — dezelfde plek claimen als
+  // waar de kaart al ligt is geen steal maar een dubbelganger van diens beurt
+  if (state.placedPosition !== null && position === state.placedPosition) return false;
   return true;
 }
 

@@ -654,6 +654,9 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
             <div className="flex flex-wrap gap-1.5">
               {Array.from({ length: (active?.timeline.length ?? 0) + 1 }, (_, i) => i)
                 .filter(pos => !state.steals.some(s => s.position === pos))
+                // De plek waar de kaart al ligt kun je niet "stelen" — dat is
+                // gewoon het antwoord van de actieve speler nadoen
+                .filter(pos => pos !== state.placedPosition)
                 .map(pos => (
                   <button
                     key={pos}
