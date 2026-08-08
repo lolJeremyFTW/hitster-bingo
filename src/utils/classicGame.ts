@@ -295,11 +295,24 @@ export function drawTrack(
   );
 
   const withYear = tracks.filter(t => t.year && !onTimelines.has(t.id));
-  const fresh = withYear.filter(t => !usedTrackIds.includes(t.id));
 
-  const pool = fresh.length > 0 ? fresh : withYear;
+  // Zonder Spotify-URI valt er niets af te spelen, en een kaart die je niet kunt
+  // horen is in dit spel waardeloos. Zulke kaarten dus overslaan — tenzij er
+  // helemaal geen gekoppelde nummers zijn, want dan speel je met fysieke kaarten
+  // en moet het spel gewoon door.
+  const playable = withYear.filter(t => t.spotifyUri);
+  const bruikbaar = playable.length > 0 ? playable : withYear;
+
+  const fresh = bruikbaar.filter(t => !usedTrackIds.includes(t.id));
+
+  const pool = fresh.length > 0 ? fresh : bruikbaar;
   if (pool.length === 0) return null;
   return pool[Math.floor(Math.random() * pool.length)];
+}
+
+/** Hoeveel nummers zijn daadwerkelijk af te spelen? */
+export function countPlayable(tracks: CustomTrack[]): number {
+  return tracks.filter(t => t.year && t.spotifyUri).length;
 }
 
 /** Mag deze speler nu HITSTER roepen? */

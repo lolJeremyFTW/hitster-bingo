@@ -79,7 +79,13 @@ export const BlindAudioPlayer: React.FC<BlindAudioPlayerProps> = ({
 
     stopEverything();
 
-    const randomIndex = Math.floor(Math.random() * tracks.length);
+    // Alleen kaarten trekken die je ook kunt horen. Heeft geen enkel nummer een
+    // Spotify-koppeling, dan speel je met fysieke kaarten en mag alles mee.
+    const speelbaar = tracks.filter(t => t.spotifyUri);
+    const pool = speelbaar.length > 0 ? speelbaar : tracks;
+
+    const gekozen = pool[Math.floor(Math.random() * pool.length)];
+    const randomIndex = tracks.indexOf(gekozen);
     setCurrentTrackIndex(randomIndex);
     setIsRevealed(false);
     setPlayedCount(prev => prev + 1);

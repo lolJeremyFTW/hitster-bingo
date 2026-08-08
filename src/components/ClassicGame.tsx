@@ -23,6 +23,7 @@ import {
   toTimelineCard,
   pickStartMs,
   SNIPPET_LENGTHS,
+  countPlayable,
   DEFAULT_SETTINGS,
   type ClassicSettings,
 } from '../utils/classicGame';
@@ -93,6 +94,8 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
    */
   const host = state.players.find(p => p.isHost);
   const canControlPlayback = host ? host.id === localPlayerId : true;
+
+  const playableCount = countPlayable(tracks);
 
   const activeDeviceName = targetDeviceId
     ? devices.find(d => d.id === targetDeviceId)?.name
@@ -454,6 +457,17 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
             : 'bg-amber-500/15 border-amber-500/40 text-amber-200'
         }`}>
           {playerError}
+        </div>
+      )}
+
+      {/* Een deels gekoppelde afspeellijst is de vervelendste variant: het
+          eerste nummer speelt, en dan ineens niet meer. Zeg dus hoeveel er
+          bruikbaar is — die worden nu ook als enige getrokken. */}
+      {canControlPlayback && playableCount > 0 && playableCount < tracks.length && (
+        <div className="p-2.5 rounded-xl bg-slate-800/60 border border-slate-700 text-[11px] text-slate-300 leading-relaxed">
+          {isNl
+            ? `${playableCount} van ${tracks.length} nummers heeft een Spotify-koppeling. Alleen die worden getrokken; de rest slaat het spel over. Importeer je playlist opnieuw met "Alles + afspeelbaar" om ze alsnog te koppelen.`
+            : `${playableCount} of ${tracks.length} tracks have a Spotify link. Only those are drawn; the rest are skipped. Re-import with "All + playable" to link them.`}
         </div>
       )}
 
