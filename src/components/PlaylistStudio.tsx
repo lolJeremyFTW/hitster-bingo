@@ -3,7 +3,7 @@ import { Music, Plus, Trash2, Download, Upload, Save, Check, Disc, ExternalLink,
 import type { CustomPlaylist, CustomTrack, Language } from '../types/hitster';
 import { getTranslation } from '../utils/translations';
 import { parseBatchTracksText, fetchSpotifyPlaylistPublic, resolveTrackUrlsWithOEmbed, autoEnrichTracks } from '../utils/spotifyImporter';
-import { resolveOriginalYears } from '../utils/yearResolver';
+import { resolveOriginalYears, needsYearCheck } from '../utils/yearResolver';
 import { findHitsterPlaylists, type FoundPlaylist } from '../data/hitsterEditions';
 import { initiateSpotifyLogin, isSpotifyAuthenticated, getStoredClientId, logoutSpotify, fetchPlaylistTracksWithOAuth, getRedirectUri, isLocalhostOrigin, fetchSpotifyProfile, matchTracksToSpotify, getValidAccessToken, extractPlaylistId } from '../utils/spotifyAuth';
 import { loadActivePlaylist, upsertPlaylist } from '../utils/playlistStore';
@@ -167,14 +167,21 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
         };
 
         setActivePlaylist(newPlaylist);
-        setImportedCountInfo(
-          language === 'nl'
-            ? `🎉 Succesvol ${result.tracks.length} nummers geïmporteerd uit "${result.name}"!`
-            : `🎉 Successfully imported ${result.tracks.length} tracks from "${result.name}"!`
-        );
         if (onSelectPlaylist) {
           onSelectPlaylist(newPlaylist);
         }
+
+        // Spotify geeft het albumjaar, en bij remasters/compilaties is dat het
+        // verkeerde jaar. Meteen verifiëren bij MusicBrainz — voor Hitster is
+        // het jaartal het hele spel.
+        const corrected = await verifyYears(newPlaylist);
+        setImportedCountInfo(
+          language === 'nl'
+            ? `🎉 ${result.tracks.length} nummers geïmporteerd uit "${result.name}"!` +
+              (corrected > 0 ? ` ${corrected} jaartallen gecorrigeerd naar de originele release.` : '')
+            : `🎉 Imported ${result.tracks.length} tracks from "${result.name}"!` +
+              (corrected > 0 ? ` Corrected ${corrected} years to the original release.` : '')
+        );
       } else {
         setSpotifyError(
           language === 'nl'
@@ -255,14 +262,19 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
           tracks: finalTracks
         };
         setActivePlaylist(newPlaylist);
-        setImportedCountInfo(
-          language === 'nl'
-            ? `🎉 Succesvol ${finalTracks.length} nummers geïmporteerd!`
-            : `🎉 Successfully imported ${finalTracks.length} tracks!`
-        );
         if (onSelectPlaylist) {
           onSelectPlaylist(newPlaylist);
         }
+
+        // Ook hier: remaster-jaren meteen rechtzetten
+        const corrected = await verifyYears(newPlaylist);
+        setImportedCountInfo(
+          language === 'nl'
+            ? `🎉 ${finalTracks.length} nummers geïmporteerd!` +
+              (corrected > 0 ? ` ${corrected} jaartallen gecorrigeerd.` : '')
+            : `🎉 Imported ${finalTracks.length} tracks!` +
+              (corrected > 0 ? ` Corrected ${corrected} years.` : '')
+        );
       } else {
         setSpotifyError(
           language === 'nl'
@@ -309,6 +321,54 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
         tracks: prev.tracks.map(t => enriched.find(e => e.id === t.id) || t)
       }));
       setIsImporting(false);
+    }
+  };
+
+  /**
+   * Remaster-/compilatiejaren corrigeren naar de originele release en meteen
+   * vastleggen. needsYearCheck slaat geverifieerde en handmatig gecorrigeerde
+   * nummers over, dus dit is veilig om vaker te draaien.
+   */
+  const verifyYears = async (playlist: CustomPlaylist): Promise<number> => {
+    cancelEnrichRef.current = false;
+    const { tracks: fixed, correctedCount } = await resolveOriginalYears(
+      playlist.tracks,
+      (msg, done) => {
+        setCrawlerLogs(prev => [...prev.slice(-30), msg]);
+        if (done) setLiveTrackCount(done);
+      },
+      () => cancelEnrichRef.current
+    );
+
+    if (correctedCount > 0) {
+      const fixedPlaylist = { ...playlist, tracks: fixed };
+      setActivePlaylist(fixedPlaylist);
+      onSelectPlaylist?.(fixedPlaylist);
+    }
+    return correctedCount;
+  };
+
+  /** Handmatige correctie wint altijd — de speler aan tafel weet het het best */
+  const handleEditYear = (trackId: string, raw: string) => {
+    const parsed = parseInt(raw, 10);
+    const year = raw === '' || Number.isNaN(parsed) ? undefined : parsed;
+    const next: CustomPlaylist = {
+      ...activePlaylist,
+      tracks: activePlaylist.tracks.map(t =>
+        t.id === trackId
+          ? { ...t, year, yearSource: year ? ('manual' as const) : undefined }
+          : t
+      ),
+    };
+    setActivePlaylist(next);
+    onSelectPlaylist?.(next);
+  };
+
+  /** Half ingetypte jaartallen (bv. "19") niet als echt jaar laten staan */
+  const handleYearBlur = (trackId: string) => {
+    const t = activePlaylist.tracks.find(tr => tr.id === trackId);
+    if (t?.year && (t.year < 1900 || t.year > new Date().getFullYear())) {
+      handleEditYear(trackId, '');
     }
   };
 
@@ -831,15 +891,25 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
           <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-1 flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2">
               <span>Nummers ({activePlaylist.tracks.length}):</span>
-              {activePlaylist.tracks.some(t => !t.year || t.artist.includes('Spotify') || t.artist === 'Unknown Artist') && (
+              {/* Ook zichtbaar bij een verdacht (remaster-)jaar, niet alleen als
+                  het jaartal helemaal ontbreekt — fout is erger dan leeg */}
+              {!isImporting && activePlaylist.tracks.some(t => needsYearCheck(t) || t.artist.includes('Spotify') || t.artist === 'Unknown Artist') && (
                 <button
                   type="button"
                   onClick={handleEnrichActivePlaylist}
-                  disabled={isImporting}
                   className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 text-[10px] font-extrabold flex items-center gap-1 transition-colors animate-pulse"
                 >
                   <Sparkles className="w-3 h-3 text-amber-400" />
-                  <span>✨ Jaartallen & Artiesten Aanvullen</span>
+                  <span>{language === 'nl' ? '✨ Jaartallen controleren' : '✨ Verify years'}</span>
+                </button>
+              )}
+              {isImporting && (
+                <button
+                  type="button"
+                  onClick={() => { cancelEnrichRef.current = true; }}
+                  className="px-2.5 py-1 rounded-lg bg-red-500/20 text-red-300 border border-red-500/40 hover:bg-red-500/30 text-[10px] font-extrabold flex items-center gap-1"
+                >
+                  <span>{language === 'nl' ? '⏹ Stop controle' : '⏹ Stop check'}</span>
                 </button>
               )}
             </div>
@@ -857,17 +927,39 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
                 key={t.id || idx}
                 className="flex items-center justify-between p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs"
               >
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2.5 min-w-0">
                   <Disc className="w-4 h-4 text-purple-400 flex-shrink-0" />
-                  <div>
-                    <div className="font-bold text-slate-200">{t.title}</div>
-                    <div className="text-[11px] text-slate-400">
-                      {t.artist} {t.year ? `(${t.year})` : ''}
-                    </div>
+                  <div className="min-w-0">
+                    <div className="font-bold text-slate-200 truncate">{t.title}</div>
+                    <div className="text-[11px] text-slate-400 truncate">{t.artist}</div>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
+                  {/* Jaartal direct aanpasbaar: de automaat zit er soms naast en
+                      aan tafel weet iemand het altijd beter. Kleur = bron. */}
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={t.year ?? ''}
+                    placeholder={language === 'nl' ? 'jaar' : 'year'}
+                    onChange={(e) => handleEditYear(t.id, e.target.value)}
+                    onBlur={() => handleYearBlur(t.id)}
+                    title={
+                      t.yearSource === 'musicbrainz'
+                        ? (language === 'nl' ? 'Geverifieerd bij MusicBrainz (originele release)' : 'Verified via MusicBrainz (original release)')
+                        : t.yearSource === 'manual'
+                        ? (language === 'nl' ? 'Handmatig gecorrigeerd' : 'Manually corrected')
+                        : (language === 'nl' ? 'Albumjaar van Spotify — kan een remaster zijn' : 'Spotify album year — may be a remaster')
+                    }
+                    className={`w-16 px-1.5 py-1 rounded-lg bg-slate-900 border text-center text-[11px] font-bold outline-none transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+                      t.yearSource === 'musicbrainz'
+                        ? 'border-green-500/50 text-green-300 focus:border-green-400'
+                        : t.yearSource === 'manual'
+                        ? 'border-sky-500/50 text-sky-300 focus:border-sky-400'
+                        : 'border-slate-700 text-amber-300 focus:border-amber-400'
+                    }`}
+                  />
                   {t.spotifyUrl && (
                     <a
                       href={t.spotifyUrl}

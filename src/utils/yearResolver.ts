@@ -47,6 +47,10 @@ function primaryArtist(artist: string): string {
  * soort album waar het op staat.
  */
 export function needsYearCheck(track: CustomTrack): boolean {
+  // Al geverifieerd bij MusicBrainz of met de hand gecorrigeerd: vertrouwen.
+  // Zonder deze regel blijft een remaster-album "verdacht" en checkt elke run
+  // dezelfde nummers opnieuw.
+  if (track.yearSource === 'musicbrainz' || track.yearSource === 'manual') return false;
   if (!track.year) return true;
   if (track.albumName && SUSPECT_ALBUM.test(track.albumName)) return true;
   if (TITLE_NOISE.test(track.title)) {
