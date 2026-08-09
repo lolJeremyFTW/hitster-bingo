@@ -6,7 +6,7 @@ import { parseBatchTracksText, fetchSpotifyPlaylistPublic, resolveTrackUrlsWithO
 import { resolveOriginalYears, needsYearCheck } from '../utils/yearResolver';
 import { findHitsterPlaylists, type FoundPlaylist } from '../data/hitsterEditions';
 import { initiateSpotifyLogin, isSpotifyAuthenticated, getStoredClientId, logoutSpotify, fetchPlaylistTracksWithOAuth, getRedirectUri, isLocalhostOrigin, fetchSpotifyProfile, matchTracksToSpotify, getValidAccessToken, extractPlaylistId } from '../utils/spotifyAuth';
-import { loadActivePlaylist, upsertPlaylist } from '../utils/playlistStore';
+import { loadActivePlaylist, loadPlaylists, upsertPlaylist, removePlaylist } from '../utils/playlistStore';
 
 interface PlaylistStudioProps {
   language: Language;
@@ -52,6 +52,10 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
   const [editions, setEditions] = useState<FoundPlaylist[] | null>(null);
   const [isSearchingEditions, setIsSearchingEditions] = useState(false);
 
+  // De opgeslagen bibliotheek, om tussen lijsten te wisselen zonder her-import
+  const [library, setLibrary] = useState<CustomPlaylist[]>([]);
+  const refreshLibrary = () => setLibrary(loadPlaylists());
+
   const handleFindEditions = async () => {
     setIsSearchingEditions(true);
     setSpotifyError(null);
@@ -89,9 +93,56 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
     // Via de store: die herstelt ook ontbrekende spotifyUri's van oude imports
     const active = loadActivePlaylist();
     if (active) setActivePlaylist(active);
+    refreshLibrary();
     // Check auth status on mount
     setIsLoggedIn(isSpotifyAuthenticated());
   }, []);
+
+  /**
+   * Alle gevonden officiële edities in één keer binnenhalen en opslaan.
+   *
+   * Bewust zónder MusicBrainz-controle: acht lijsten van honderden nummers zou
+   * een half uur duren. De "Jaartallen controleren"-knop verschijnt vanzelf
+   * zodra je een editie kiest om mee te spelen.
+   */
+  const handleImportAllEditions = async () => {
+    if (!editions || editions.length === 0 || isImporting) return;
+    setIsImporting(true);
+    setSpotifyError(null);
+    cancelEnrichRef.current = false;
+    let geslaagd = 0;
+
+    for (const ed of editions) {
+      if (cancelEnrichRef.current) break;
+      setCrawlerLogs(prev => [...prev.slice(-30), `⬇️ ${ed.emoji} ${ed.playlistName} importeren…`]);
+      try {
+        const result = await fetchPlaylistTracksWithOAuth(ed.url, (msg, count) => {
+          setCrawlerLogs(prev => [...prev.slice(-30), msg]);
+          if (count) setLiveTrackCount(count);
+        });
+        if (result && result.tracks.length > 0) {
+          upsertPlaylist({
+            id: `spotify_${ed.playlistId}`,
+            name: `${ed.emoji} ${result.name || ed.playlistName}`,
+            description: `Officiële editie (${result.tracks.length} nummers)`,
+            createdAt: new Date().toISOString(),
+            tracks: result.tracks,
+          }, { makeActive: false });
+          geslaagd++;
+          refreshLibrary();
+        }
+      } catch (err: any) {
+        setCrawlerLogs(prev => [...prev.slice(-30), `⚠️ ${ed.playlistName}: ${err.message}`]);
+      }
+    }
+
+    setImportedCountInfo(
+      language === 'nl'
+        ? `📚 ${geslaagd} edities opgeslagen! Kies er hieronder één bij "Opgeslagen lijsten" om te spelen.`
+        : `📚 Saved ${geslaagd} editions! Pick one under "Saved playlists" to play.`
+    );
+    setIsImporting(false);
+  };
 
   // Premium bepaalt of de Web Playback SDK kan streamen — meteen laten zien,
   // zodat je niet pas tijdens het spelen ontdekt dat er geen geluid komt.
@@ -170,6 +221,7 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
         if (onSelectPlaylist) {
           onSelectPlaylist(newPlaylist);
         }
+        refreshLibrary();
 
         // Spotify geeft het albumjaar, en bij remasters/compilaties is dat het
         // verkeerde jaar. Meteen verifiëren bij MusicBrainz — voor Hitster is
@@ -265,6 +317,7 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
         if (onSelectPlaylist) {
           onSelectPlaylist(newPlaylist);
         }
+        refreshLibrary();
 
         // Ook hier: remaster-jaren meteen rechtzetten
         const corrected = await verifyYears(newPlaylist);
@@ -344,6 +397,7 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
       const fixedPlaylist = { ...playlist, tracks: fixed };
       setActivePlaylist(fixedPlaylist);
       onSelectPlaylist?.(fixedPlaylist);
+      refreshLibrary();
     }
     return correctedCount;
   };
@@ -459,6 +513,7 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
 
   const handleSavePlaylist = () => {
     upsertPlaylist(activePlaylist);
+    refreshLibrary();
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 2000);
 
@@ -679,16 +734,30 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
                   <span className="text-[11px] font-bold text-purple-300">
                     {isNl ? 'Officiële Hitster-edities' : 'Official Hitster editions'}
                   </span>
-                  <button
-                    onClick={handleFindEditions}
-                    disabled={isSearchingEditions}
-                    className="px-2.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white font-bold text-[11px] flex items-center gap-1.5"
-                  >
-                    {isSearchingEditions
-                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      : <Layers className="w-3.5 h-3.5" />}
-                    <span>{isSearchingEditions ? (isNl ? 'Zoeken…' : 'Searching…') : (isNl ? 'Zoek edities' : 'Find editions')}</span>
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    {editions && editions.length > 0 && (
+                      <button
+                        onClick={handleImportAllEditions}
+                        disabled={isImporting || isSearchingEditions}
+                        className="px-2.5 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white font-bold text-[11px] flex items-center gap-1.5"
+                      >
+                        {isImporting
+                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          : <Download className="w-3.5 h-3.5" />}
+                        <span>{isNl ? 'Alles importeren' : 'Import all'}</span>
+                      </button>
+                    )}
+                    <button
+                      onClick={handleFindEditions}
+                      disabled={isSearchingEditions || isImporting}
+                      className="px-2.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white font-bold text-[11px] flex items-center gap-1.5"
+                    >
+                      {isSearchingEditions
+                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        : <Layers className="w-3.5 h-3.5" />}
+                      <span>{isSearchingEditions ? (isNl ? 'Zoeken…' : 'Searching…') : (isNl ? 'Zoek edities' : 'Find editions')}</span>
+                    </button>
+                  </div>
                 </div>
 
                 {editions === null ? (
@@ -885,6 +954,56 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
             placeholder="Afspeellijst Naam"
           />
         </div>
+
+        {/* Opgeslagen lijsten: één tik om van editie te wisselen, geen her-import */}
+        {library.length > 0 && (
+          <div className="mb-4">
+            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-1 mb-1.5">
+              {isNl ? `Opgeslagen lijsten (${library.length})` : `Saved playlists (${library.length})`}
+            </div>
+            <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+              {library.map(p => {
+                const isActive = p.id === activePlaylist.id;
+                return (
+                  <div
+                    key={p.id}
+                    className={`flex items-center gap-2 p-2 rounded-lg border transition-colors ${
+                      isActive
+                        ? 'bg-green-500/10 border-green-500/40'
+                        : 'bg-slate-950 border-slate-800 hover:border-purple-400'
+                    }`}
+                  >
+                    <button
+                      onClick={() => {
+                        setActivePlaylist(p);
+                        onSelectPlaylist?.(p);
+                        refreshLibrary();
+                      }}
+                      className="flex-1 min-w-0 text-left"
+                    >
+                      <span className={`block text-[11px] font-bold truncate ${isActive ? 'text-green-300' : 'text-slate-100'}`}>
+                        {isActive ? '▶ ' : ''}{p.name}
+                      </span>
+                      <span className="block text-[10px] text-slate-500">
+                        {p.tracks.length} {isNl ? 'nummers' : 'tracks'}
+                        {isActive ? (isNl ? ' · actief in het spel' : ' · active in game') : ''}
+                      </span>
+                    </button>
+                    {!isActive && (
+                      <button
+                        onClick={() => setLibrary(removePlaylist(p.id))}
+                        className="p-1 text-slate-500 hover:text-red-400 transition-colors shrink-0"
+                        title={isNl ? 'Verwijderen' : 'Delete'}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Track List */}
         <div className="max-h-52 overflow-y-auto pr-1 space-y-2 mb-5">

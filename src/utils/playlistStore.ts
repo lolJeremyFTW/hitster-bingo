@@ -80,19 +80,38 @@ export function loadPlaylists(): CustomPlaylist[] {
   return healed;
 }
 
-/** Lijst opslaan of bijwerken (op id), en meteen als actief onthouden. */
-export function upsertPlaylist(playlist: CustomPlaylist): CustomPlaylist[] {
+/**
+ * Lijst opslaan of bijwerken (op id). Standaard wordt hij ook de actieve;
+ * bij een bulk-import wil je dat juist niet — dan kiest de speler daarna zelf.
+ */
+export function upsertPlaylist(
+  playlist: CustomPlaylist,
+  opts: { makeActive?: boolean } = {}
+): CustomPlaylist[] {
+  const { makeActive = true } = opts;
   const rest = loadPlaylists().filter(p => p.id !== playlist.id);
   const updated = [playlist, ...rest].slice(0, MAX_PLAYLISTS);
 
   try {
     localStorage.setItem(PLAYLISTS_KEY, JSON.stringify(updated));
-    localStorage.setItem(ACTIVE_KEY, playlist.id);
+    if (makeActive) localStorage.setItem(ACTIVE_KEY, playlist.id);
   } catch {
     // Vol; de app blijft werken met wat er in het geheugen staat
   }
 
   return updated;
+}
+
+/** Lijst verwijderen; geeft de overgebleven lijsten terug. */
+export function removePlaylist(id: string): CustomPlaylist[] {
+  const rest = loadPlaylists().filter(p => p.id !== id);
+  try {
+    localStorage.setItem(PLAYLISTS_KEY, JSON.stringify(rest));
+    if (localStorage.getItem(ACTIVE_KEY) === id) localStorage.removeItem(ACTIVE_KEY);
+  } catch {
+    // Opslag vol — onwaarschijnlijk bij verwijderen, maar nooit laten crashen
+  }
+  return rest;
 }
 
 /**
