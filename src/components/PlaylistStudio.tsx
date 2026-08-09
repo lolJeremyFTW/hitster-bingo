@@ -5,7 +5,7 @@ import { getTranslation } from '../utils/translations';
 import { parseBatchTracksText, fetchSpotifyPlaylistPublic, resolveTrackUrlsWithOEmbed, autoEnrichTracks } from '../utils/spotifyImporter';
 import { resolveOriginalYears, needsYearCheck, rememberYear } from '../utils/yearResolver';
 import { findHitsterPlaylists, type FoundPlaylist } from '../data/hitsterEditions';
-import { initiateSpotifyLogin, isSpotifyAuthenticated, getStoredClientId, logoutSpotify, fetchPlaylistTracksWithOAuth, getRedirectUri, isLocalhostOrigin, fetchSpotifyProfile, matchTracksToSpotify, getValidAccessToken, extractPlaylistId } from '../utils/spotifyAuth';
+import { initiateSpotifyLogin, isSpotifyAuthenticated, getStoredClientId, logoutSpotify, fetchPlaylistTracksWithOAuth, getRedirectUri, isLocalhostOrigin, fetchSpotifyProfile, matchTracksToSpotify, getValidAccessToken, extractPlaylistId, DEFAULT_CLIENT_ID } from '../utils/spotifyAuth';
 import { loadActivePlaylist, loadPlaylists, upsertPlaylist, removePlaylist } from '../utils/playlistStore';
 
 interface PlaylistStudioProps {
@@ -805,17 +805,18 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
               </div>
             )}
 
-            {/* OAuth Setup — collapsible, only if not logged in */}
+            {/* OAuth Setup — only if not logged in. De Client ID zit ingebakken,
+                dus normaal is dit één klik; de eigen-app-route blijft als
+                ingeklapte optie bestaan. */}
             {!isLoggedIn && (
               <div className="p-3 rounded-xl bg-slate-900 border border-green-500/20 space-y-2">
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  {isNl
-                    ? 'Voor alle nummers: maak een gratis app op developer.spotify.com → kopieer Client ID → zet deze Redirect URI erin (exact, zonder slash op het eind):'
-                    : 'For all tracks: create a free app at developer.spotify.com → copy Client ID → add this exact Redirect URI (no trailing slash):'}
-                </p>
-                <code className="block text-[10px] text-green-400 bg-slate-950 px-2 py-1 rounded font-mono select-all">
-                  {getRedirectUri()}
-                </code>
+                {spotifyClientId === DEFAULT_CLIENT_ID && (
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    {isNl
+                      ? '✅ De Spotify-koppeling staat klaar — klik gewoon op "Login met Spotify". Let op: alleen Spotify-accounts die in het dashboard onder User Management zijn toegevoegd kunnen inloggen.'
+                      : '✅ Spotify is preconfigured — just click "Login with Spotify". Note: only accounts added under User Management in the dashboard can log in.'}
+                  </p>
+                )}
 
                 {isLocalhostOrigin() && (
                   <p className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/40 rounded-lg px-2 py-1.5 leading-relaxed">
@@ -825,27 +826,42 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
                   </p>
                 )}
 
-                <p className="text-[11px] text-slate-500 leading-relaxed">
-                  {isNl
-                    ? 'Zet in het dashboard ook je eigen Spotify-account onder "User Management" — apps in Development Mode laten alleen toegevoegde accounts toe.'
-                    : 'Also add your own Spotify account under "User Management" — apps in Development Mode only allow listed accounts.'}
-                </p>
-                <input
-                  type="text"
-                  value={spotifyClientId}
-                  onChange={(e) => setSpotifyClientId(e.target.value)}
-                  placeholder="Spotify Client ID"
-                  className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-green-500/40 text-xs font-mono text-green-300 focus:outline-none focus:border-green-400 placeholder-slate-600"
-                />
-                <a
-                  href="https://developer.spotify.com/dashboard"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-[11px] text-green-400 hover:text-green-300 font-bold"
-                >
-                  <ExternalLink className="w-3 h-3" />
-                  <span>Open Spotify Developer Dashboard →</span>
-                </a>
+                <details open={spotifyClientId !== DEFAULT_CLIENT_ID}>
+                  <summary className="cursor-pointer text-[11px] font-bold text-slate-400 hover:text-slate-200 select-none">
+                    {isNl ? 'Eigen Spotify-app gebruiken (optioneel)' : 'Use your own Spotify app (optional)'}
+                  </summary>
+                  <div className="space-y-2 mt-2">
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      {isNl
+                        ? 'Maak een gratis app op developer.spotify.com → kopieer de Client ID → zet deze Redirect URI erin (exact, zonder slash op het eind):'
+                        : 'Create a free app at developer.spotify.com → copy the Client ID → add this exact Redirect URI (no trailing slash):'}
+                    </p>
+                    <code className="block text-[10px] text-green-400 bg-slate-950 px-2 py-1 rounded font-mono select-all">
+                      {getRedirectUri()}
+                    </code>
+                    <p className="text-[11px] text-slate-500 leading-relaxed">
+                      {isNl
+                        ? 'Zet in het dashboard ook je eigen Spotify-account onder "User Management" — apps in Development Mode laten alleen toegevoegde accounts toe.'
+                        : 'Also add your own Spotify account under "User Management" — apps in Development Mode only allow listed accounts.'}
+                    </p>
+                    <input
+                      type="text"
+                      value={spotifyClientId}
+                      onChange={(e) => setSpotifyClientId(e.target.value)}
+                      placeholder="Spotify Client ID"
+                      className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-green-500/40 text-xs font-mono text-green-300 focus:outline-none focus:border-green-400 placeholder-slate-600"
+                    />
+                    <a
+                      href="https://developer.spotify.com/dashboard"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-[11px] text-green-400 hover:text-green-300 font-bold"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      <span>Open Spotify Developer Dashboard →</span>
+                    </a>
+                  </div>
+                </details>
               </div>
             )}
 

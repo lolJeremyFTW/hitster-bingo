@@ -35,6 +35,17 @@ const REQUIRED_SCOPES = [
 
 const SCOPES = REQUIRED_SCOPES.join(' ');
 
+/**
+ * Jeremy's eigen Spotify-app, standaard ingebakken zodat inloggen op elk
+ * toestel één klik is. Publiek gegeven bij PKCE — hij staat toch in elke
+ * auth-URL, er bestaat geen secret in deze flow. Een zelf ingevulde Client ID
+ * (localStorage) wint altijd van deze standaard.
+ *
+ * Let op: de app staat in Development Mode, dus alleen Spotify-accounts die in
+ * het dashboard onder User Management staan kunnen ermee inloggen.
+ */
+export const DEFAULT_CLIENT_ID = '63903f0944814b91aacb4b712d0e4b66';
+
 // Storage keys
 const STORAGE_KEYS = {
   CLIENT_ID: 'hitster_sp_client_id',
@@ -140,7 +151,7 @@ export async function handleSpotifyCallback(): Promise<boolean> {
   if (!code) return false;
 
   const codeVerifier = localStorage.getItem(STORAGE_KEYS.CODE_VERIFIER);
-  const clientId = localStorage.getItem(STORAGE_KEYS.CLIENT_ID);
+  const clientId = getStoredClientId();
 
   if (!codeVerifier || !clientId) {
     console.error('[Spotify OAuth] Missing code verifier or client ID');
@@ -193,7 +204,7 @@ export async function handleSpotifyCallback(): Promise<boolean> {
 
 async function refreshAccessToken(): Promise<string | null> {
   const refreshToken = localStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
-  const clientId = localStorage.getItem(STORAGE_KEYS.CLIENT_ID);
+  const clientId = getStoredClientId();
 
   if (!refreshToken || !clientId) return null;
 
@@ -275,7 +286,7 @@ export function isSpotifyAuthenticated(): boolean {
 }
 
 export function getStoredClientId(): string {
-  return localStorage.getItem(STORAGE_KEYS.CLIENT_ID) || '';
+  return localStorage.getItem(STORAGE_KEYS.CLIENT_ID) || DEFAULT_CLIENT_ID;
 }
 
 export function logoutSpotify(): void {
