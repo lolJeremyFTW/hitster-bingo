@@ -85,7 +85,7 @@ export const ClassicTimeline: React.FC<ClassicTimelineProps> = ({
         }}
         disabled={!clickable}
         aria-hidden={!clickable && !marker && !isChosen && !isCorrect}
-        className={`shrink-0 h-full w-7 sm:w-9 rounded-lg border-2 border-dashed transition-all flex flex-col items-center justify-center gap-0.5 ${
+        className={`shrink-0 h-full w-5 sm:w-9 rounded-lg border-2 border-dashed transition-all flex flex-col items-center justify-center gap-0.5 ${
           clickable ? 'cursor-pointer' : ''
         } ${
           isChosen
@@ -156,7 +156,7 @@ export const ClassicTimeline: React.FC<ClassicTimelineProps> = ({
             // Met een vast kolompatroon zijn alle 1fr-kolommen exact gelijk.
             <div
               key={rowIdx}
-              className="grid items-stretch gap-0.5 h-20 lg:h-24 [@media(max-height:480px)]:h-[3.25rem]"
+              className="grid items-stretch gap-px sm:gap-0.5 h-20 lg:h-24 [@media(max-height:480px)]:h-[3.25rem]"
               style={{ gridTemplateColumns: 'repeat(5, auto minmax(0, 1fr)) auto' }}
             >
               {/* Altijd vijf even brede cellen, ook als de rij half vol is —
@@ -190,7 +190,7 @@ export const ClassicTimeline: React.FC<ClassicTimelineProps> = ({
                       type="button"
                       onClick={() => setPeekedPosition(isPeeked ? null : position)}
                       title={isPeeked ? undefined : `${card.title} — ${card.artist}`}
-                      className={`min-w-0 overflow-hidden rounded-lg bg-gradient-to-b border p-1 flex flex-col items-center justify-center text-center shadow transition-colors cursor-pointer ${
+                      className={`min-w-0 overflow-hidden rounded-lg bg-gradient-to-b border p-0.5 sm:p-1 flex flex-col items-center justify-center text-center shadow transition-colors cursor-pointer ${
                         isPeeked
                           ? 'from-slate-700 to-slate-800 border-amber-400/60'
                           : 'from-slate-800 to-slate-900 border-slate-700 hover:border-slate-500'
@@ -209,7 +209,7 @@ export const ClassicTimeline: React.FC<ClassicTimelineProps> = ({
                           </div>
                         </>
                       ) : (
-                        <div className="font-black text-base sm:text-lg text-amber-300 leading-none">
+                        <div className="font-black text-sm sm:text-lg tracking-tight text-amber-300 leading-none">
                           {card.year}
                         </div>
                       )}
@@ -229,6 +229,18 @@ export const ClassicTimeline: React.FC<ClassicTimelineProps> = ({
             {isNl
               ? 'Nog geen kaarten. De eerste kaart is altijd goed.'
               : 'No cards yet. The first card is always correct.'}
+          </p>
+        )}
+
+        {/* De kaart zelf is op een telefoon te smal voor de titel; de open
+            kaart krijgt daarom zijn volledige gegevens als regel hieronder */}
+        {peekedPosition !== null && player.timeline[peekedPosition] && (
+          <p className="text-[11px] text-slate-300 px-0.5">
+            <span className="font-black text-amber-300">{player.timeline[peekedPosition].year}</span>
+            {' · '}
+            <span className="font-bold text-slate-100">{player.timeline[peekedPosition].title}</span>
+            {' — '}
+            <span className="text-slate-400">{player.timeline[peekedPosition].artist}</span>
           </p>
         )}
       </div>
