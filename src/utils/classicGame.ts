@@ -65,6 +65,12 @@ export interface ClassicGameState {
   placedPosition: number | null;
   /** Claimt de titel+artiest-bonus */
   claimedTitleArtist: boolean;
+  /**
+   * De tafel twijfelt of de claim echt klopt ("was dat wel de juiste titel?").
+   * Bij twijfel wordt de munt niet automatisch uitgekeerd; de host beslist na
+   * de onthulling, als iedereen het antwoord heeft gezien.
+   */
+  titleArtistDoubt?: boolean;
   steals: StealClaim[];
   /** Tracks die al gespeeld zijn, zodat niemand hetzelfde nummer twee keer krijgt */
   usedTrackIds: string[];
@@ -168,6 +174,8 @@ export interface TurnSummary {
   tokenEarnedBy: string | null;
   failedStealers: string[];
   successfulStealerId: string | null;
+  /** Titel/artiest geclaimd maar betwist — de host beslist na de onthulling */
+  claimInDoubt?: boolean;
 }
 
 export interface ResolveOutcome {
@@ -230,8 +238,9 @@ export function resolveTurn(state: ClassicGameState): ResolveOutcome {
       if (placementCorrect) {
         timeline = insertIntoTimeline(p.timeline, card, state.placedPosition!);
       }
-      // Titel + artiest goed levert een munt op, ook bij een foute plaatsing
-      if (state.claimedTitleArtist) {
+      // Titel + artiest goed levert een munt op, ook bij een foute plaatsing.
+      // Bij twijfel wacht de munt op het oordeel van de host na de onthulling.
+      if (state.claimedTitleArtist && !state.titleArtistDoubt) {
         tokens = Math.min(MAX_TOKENS, tokens + 1);
       }
     }
@@ -254,9 +263,10 @@ export function resolveTurn(state: ClassicGameState): ResolveOutcome {
   const summary: TurnSummary = {
     placementCorrect,
     cardWonBy: placementCorrect ? active.id : successfulStealerId,
-    tokenEarnedBy: state.claimedTitleArtist ? active.id : null,
+    tokenEarnedBy: state.claimedTitleArtist && !state.titleArtistDoubt ? active.id : null,
     failedStealers,
     successfulStealerId,
+    claimInDoubt: state.claimedTitleArtist && !!state.titleArtistDoubt,
   };
 
   return {
@@ -284,10 +294,59 @@ export function nextTurn(state: ClassicGameState): ClassicGameState {
     currentTrack: null,
     placedPosition: null,
     claimedTitleArtist: false,
+    titleArtistDoubt: false,
     steals: [],
     usedTrackIds,
     roundNumber: state.roundNumber + 1,
     lastOutcome: null,
+  };
+}
+
+/**
+ * De host kent de betwiste titel/artiest-munt alsnog toe, nadat iedereen het
+ * antwoord heeft gezien en de tafel eruit is.
+ */
+export function awardDoubtToken(state: ClassicGameState): ClassicGameState {
+  const active = state.players[state.activePlayerIndex];
+  if (!active || !state.lastOutcome?.claimInDoubt) return state;
+  return {
+    ...state,
+    players: state.players.map(p =>
+      p.id === active.id ? { ...p, tokens: Math.min(MAX_TOKENS, p.tokens + 1) } : p
+    ),
+    lastOutcome: { ...state.lastOutcome, claimInDoubt: false, tokenEarnedBy: active.id },
+  };
+}
+
+/** De host wijst de betwiste claim af — geen munt. */
+export function dismissDoubtToken(state: ClassicGameState): ClassicGameState {
+  if (!state.lastOutcome?.claimInDoubt) return state;
+  return { ...state, lastOutcome: { ...state.lastOutcome, claimInDoubt: false } };
+}
+
+/**
+ * Zelfde spelers, nieuw spel. De al gespeelde nummers blijven uitgesloten,
+ * zodat een tweede potje niet dezelfde kaarten opdient. De verliezer van het
+ * zitje ernaast mag beginnen: wie ná de winnaar komt, start.
+ */
+export function playAgain(state: ClassicGameState): ClassicGameState {
+  const fresh = createInitialState(
+    state.players.map(p => createPlayer(p.id, p.name, p.isHost, state.startTokens)),
+    state.startTokens
+  );
+
+  const winnerIdx = state.players.findIndex(p => p.id === state.winnerId);
+
+  // Ook het winnende nummer uitsluiten: dat ging nooit door nextTurn en zit
+  // dus nog niet in usedTrackIds
+  const used = state.currentTrack && !state.usedTrackIds.includes(state.currentTrack.id)
+    ? [...state.usedTrackIds, state.currentTrack.id]
+    : state.usedTrackIds;
+
+  return {
+    ...fresh,
+    usedTrackIds: used,
+    activePlayerIndex: winnerIdx >= 0 ? (winnerIdx + 1) % Math.max(1, state.players.length) : 0,
   };
 }
 
@@ -427,9 +486,11 @@ const ASSUMED_DURATION_MS = 3.5 * 60 * 1000;
  * Kiest waar het fragment begint.
  *
  * Bij 'random' blijft de eerste 15% buiten beeld — intro's zijn vaak juist het
- * herkenbaarste stukje — en eindigt het fragment ruim voor de laatste 10%, om
- * niet in de fade-out of de stilte te belanden. Past het fragment niet binnen
- * die marges, dan begint het gewoon bij het begin.
+ * herkenbaarste stukje — en houdt het einde ruim afstand van de fade-out: het
+ * fragment eindigt minstens 20 seconden (of 15%) vóór het slot, en begint
+ * nooit voorbij 65% van het nummer. Zo beland je in een couplet of refrein,
+ * niet in de outro. Past het fragment niet binnen die marges, dan begint het
+ * gewoon bij het begin.
  */
 export function pickStartMs(
   durationMs: number | undefined,
@@ -438,11 +499,21 @@ export function pickStartMs(
 ): number {
   if (mode === 'begin') return 0;
 
-  const duration = durationMs && durationMs > 0 ? durationMs : ASSUMED_DURATION_MS;
+  const known = !!durationMs && durationMs > 0;
+  const duration = known ? durationMs! : ASSUMED_DURATION_MS;
   const snippetMs = snippetSeconds * 1000;
 
   const earliest = Math.floor(duration * 0.15);
-  const latest = Math.floor(duration * 0.9) - snippetMs;
+  const endMargin = Math.max(20_000, Math.floor(duration * 0.15));
+  let latest = Math.min(
+    Math.floor(duration * 0.65),
+    duration - endMargin - snippetMs
+  );
+
+  // Onbekende lengte: de 3,5-minutengok kan langer zijn dan het echte nummer,
+  // en dan zou een "veilige" start alsnog in de outro of voorbij het einde
+  // vallen. Nooit verder dan 45s springen — dat is veilig voor vrijwel alles.
+  if (!known) latest = Math.min(latest, 45_000);
 
   if (latest <= earliest) return 0;
   return earliest + Math.floor(Math.random() * (latest - earliest));

@@ -3,7 +3,7 @@ import { Music, Plus, Trash2, Download, Upload, Save, Check, Disc, ExternalLink,
 import type { CustomPlaylist, CustomTrack, Language } from '../types/hitster';
 import { getTranslation } from '../utils/translations';
 import { parseBatchTracksText, fetchSpotifyPlaylistPublic, resolveTrackUrlsWithOEmbed, autoEnrichTracks } from '../utils/spotifyImporter';
-import { resolveOriginalYears, needsYearCheck } from '../utils/yearResolver';
+import { resolveOriginalYears, needsYearCheck, rememberYear } from '../utils/yearResolver';
 import { findHitsterPlaylists, type FoundPlaylist } from '../data/hitsterEditions';
 import { initiateSpotifyLogin, isSpotifyAuthenticated, getStoredClientId, logoutSpotify, fetchPlaylistTracksWithOAuth, getRedirectUri, isLocalhostOrigin, fetchSpotifyProfile, matchTracksToSpotify, getValidAccessToken, extractPlaylistId } from '../utils/spotifyAuth';
 import { loadActivePlaylist, loadPlaylists, upsertPlaylist, removePlaylist } from '../utils/playlistStore';
@@ -406,6 +406,12 @@ export const PlaylistStudio: React.FC<PlaylistStudioProps> = ({
   const handleEditYear = (trackId: string, raw: string) => {
     const parsed = parseInt(raw, 10);
     const year = raw === '' || Number.isNaN(parsed) ? undefined : parsed;
+    const track = activePlaylist.tracks.find(t => t.id === trackId);
+
+    // Ook in de gedeelde jaartallen-cache: dan klopt dit nummer voortaan in
+    // élke lijst waar het in voorkomt (rememberYear negeert halve invoer zelf)
+    if (track && year) rememberYear(track.title, track.artist, year);
+
     const next: CustomPlaylist = {
       ...activePlaylist,
       tracks: activePlaylist.tracks.map(t =>

@@ -10,6 +10,12 @@ interface ClassicTimelineProps {
   /** Toont de invoegplekken waar de kaart geplaatst kan worden */
   canPlace?: boolean;
   onPlace?: (position: number) => void;
+  /**
+   * Steel-modus: tegenstanders tikken direct op de plek waar de kaart volgens
+   * hen hoort — zelfde gebaar als plaatsen, maar dan rood en met een munt.
+   */
+  canSteal?: boolean;
+  onSteal?: (position: number) => void;
   /** Posities waar al een steal-munt ligt, met de naam van de inzetter */
   stealMarkers?: { position: number; label: string }[];
   /** Na de onthulling: welke posities waren goed */
@@ -31,6 +37,8 @@ export const ClassicTimeline: React.FC<ClassicTimelineProps> = ({
   language,
   canPlace = false,
   onPlace,
+  canSteal = false,
+  onSteal,
   stealMarkers = [],
   correctPositions = [],
   pendingCard,
@@ -38,6 +46,16 @@ export const ClassicTimeline: React.FC<ClassicTimelineProps> = ({
   isRevealed = false,
 }) => {
   const isNl = language === 'nl';
+
+  // Kaarten tonen alleen het jaartal — net als de echte Hitster-kaarten, en op
+  // een staande telefoon past de tijdlijn dan wél. Tik op een kaart om even de
+  // titel en artiest te zien; nog een tik (of een andere kaart) klapt hem terug.
+  const [peekedPosition, setPeekedPosition] = React.useState<number | null>(null);
+
+  // Kijk je naar een andere speler, dan hoort er geen kaart open te blijven staan
+  React.useEffect(() => {
+    setPeekedPosition(null);
+  }, [player.id]);
 
   // Twee rijen van vijf; de tweede rij verschijnt pas als hij nodig is
   const rows: TimelineCard[][] = [
@@ -52,17 +70,23 @@ export const ClassicTimeline: React.FC<ClassicTimelineProps> = ({
     // Posities voorbij het einde bestaan alleen als opvulling, niet als keuze
     const inRange = position <= player.timeline.length;
     const canPlaceHere = canPlace && inRange;
+    // Stelen kan niet op de gekozen plek (dat is nadoen) of waar al een munt ligt
+    const canStealHere = canSteal && inRange && !isChosen && !marker;
+    const clickable = canPlaceHere || canStealHere;
 
     // Vaste breedte, altijd. Een smallere of ontbrekende plek laat de kaarten
     // ernaast uitrekken, waardoor rij 1 en rij 2 niet meer even breed zijn.
     return (
       <button
         key={`slot-${position}`}
-        onClick={() => canPlaceHere && onPlace?.(position)}
-        disabled={!canPlaceHere}
-        aria-hidden={!canPlaceHere && !marker && !isChosen && !isCorrect}
+        onClick={() => {
+          if (canPlaceHere) onPlace?.(position);
+          else if (canStealHere) onSteal?.(position);
+        }}
+        disabled={!clickable}
+        aria-hidden={!clickable && !marker && !isChosen && !isCorrect}
         className={`shrink-0 h-full w-7 sm:w-9 rounded-lg border-2 border-dashed transition-all flex flex-col items-center justify-center gap-0.5 ${
-          canPlaceHere ? 'cursor-pointer' : ''
+          clickable ? 'cursor-pointer' : ''
         } ${
           isChosen
             ? 'border-amber-400 bg-amber-500/25'
@@ -72,14 +96,24 @@ export const ClassicTimeline: React.FC<ClassicTimelineProps> = ({
             ? 'border-red-400 bg-red-500/20'
             : canPlaceHere
             ? 'border-slate-600 hover:border-amber-400 hover:bg-amber-500/15'
+            : canStealHere
+            ? 'border-red-500/60 hover:border-red-400 hover:bg-red-500/15'
             : 'border-transparent'
         }`}
-        title={marker ? `${marker.label} claimt deze plek` : undefined}
+        title={
+          marker
+            ? `${marker.label} claimt deze plek`
+            : canStealHere
+            ? (isNl ? 'Steel: hier hoort de kaart volgens jou' : 'Steal: claim the card belongs here')
+            : undefined
+        }
       >
         {marker ? (
           <Coins className="w-3.5 h-3.5 text-red-300" />
         ) : canPlaceHere ? (
           <Plus className="w-3.5 h-3.5 text-slate-400" />
+        ) : canStealHere ? (
+          <Coins className="w-3.5 h-3.5 text-red-400/70" />
         ) : null}
         {marker && (
           <span className="text-[8px] font-bold text-red-200 leading-none px-0.5 truncate max-w-full">
@@ -142,6 +176,8 @@ export const ClassicTimeline: React.FC<ClassicTimelineProps> = ({
                   );
                 }
 
+                const isPeeked = peekedPosition === position;
+
                 return (
                   // Positie meenemen: een track kan in theorie twee keer op een
                   // tijdlijn belanden en dan botsen de keys
@@ -150,17 +186,34 @@ export const ClassicTimeline: React.FC<ClassicTimelineProps> = ({
                     {/* overflow-hidden + break-words: zonder dat duwt een lange
                         titel zijn cel breder dan de andere en lopen de rijen
                         uit de pas */}
-                    <div className="min-w-0 overflow-hidden rounded-lg bg-gradient-to-b from-slate-800 to-slate-900 border border-slate-700 p-1 flex flex-col items-center justify-center text-center shadow">
-                      <div className="font-black text-sm sm:text-base text-amber-300 leading-none">
-                        {card.year}
-                      </div>
-                      <div className="w-full text-[9px] font-bold text-slate-200 leading-tight line-clamp-2 break-words mt-0.5">
-                        {card.title}
-                      </div>
-                      <div className="w-full text-[8px] text-slate-400 leading-tight line-clamp-1 break-words">
-                        {card.artist}
-                      </div>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setPeekedPosition(isPeeked ? null : position)}
+                      title={isPeeked ? undefined : `${card.title} — ${card.artist}`}
+                      className={`min-w-0 overflow-hidden rounded-lg bg-gradient-to-b border p-1 flex flex-col items-center justify-center text-center shadow transition-colors cursor-pointer ${
+                        isPeeked
+                          ? 'from-slate-700 to-slate-800 border-amber-400/60'
+                          : 'from-slate-800 to-slate-900 border-slate-700 hover:border-slate-500'
+                      }`}
+                    >
+                      {isPeeked ? (
+                        <>
+                          <div className="font-black text-[11px] text-amber-300 leading-none">
+                            {card.year}
+                          </div>
+                          <div className="w-full text-[9px] font-bold text-slate-100 leading-tight line-clamp-2 break-words mt-0.5">
+                            {card.title}
+                          </div>
+                          <div className="w-full text-[8px] text-slate-400 leading-tight line-clamp-1 break-words">
+                            {card.artist}
+                          </div>
+                        </>
+                      ) : (
+                        <div className="font-black text-base sm:text-lg text-amber-300 leading-none">
+                          {card.year}
+                        </div>
+                      )}
+                    </button>
                   </React.Fragment>
                 );
               })}

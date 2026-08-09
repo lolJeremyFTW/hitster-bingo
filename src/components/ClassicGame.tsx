@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { Coins, Eye, Users, Play, Pause, RotateCw, Trophy, Hand, Check, X, Settings2, Loader2, Volume2 } from 'lucide-react';
+import { Coins, Eye, Users, Play, Pause, RotateCw, Trophy, Hand, Check, X, Settings2, Loader2, Volume2, Dices, HelpCircle } from 'lucide-react';
 import type { CustomTrack, Language } from '../types/hitster';
 import { ClassicTimeline } from './ClassicTimeline';
 import {
@@ -21,6 +21,9 @@ import {
   resolveTurn,
   toTimelineCard,
   pickStartMs,
+  playAgain,
+  awardDoubtToken,
+  dismissDoubtToken,
   SNIPPET_LENGTHS,
   countPlayable,
   DEFAULT_SETTINGS,
@@ -108,6 +111,20 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
   // volgende geheime nummer verklappen.
   const outcome = state.phase === 'revealed' ? state.lastOutcome ?? null : null;
 
+  // Het eenmaal gekozen fragment onthouden: herhalen speelt hetzelfde stuk,
+  // zodat je kunt terugluisteren. "Nieuw fragment" (dobbelsteen) kiest bewust
+  // een ander stuk. Reset per kaart.
+  const [chosenStartMs, setChosenStartMs] = useState<number | null>(null);
+  useEffect(() => {
+    setChosenStartMs(null);
+  }, [state.currentTrack?.id]);
+
+  // Bij een nieuwe beurt springt élk toestel terug naar de tijdlijn van wie nu
+  // aan de beurt is — wie bij een ander zat te kijken is meteen weer bij.
+  useEffect(() => {
+    setViewedPlayerId(null);
+  }, [state.roundNumber, state.activePlayerIndex]);
+
   React.useEffect(() => {
     spotifyPlayer.setEvents({
       onStatus: (s, detail) => {
@@ -178,22 +195,9 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
     soundEffects.playSpinSelected();
   }, [tracks, state.usedTrackIds, state.players, setState]);
 
-  const handlePlay = useCallback(async () => {
-    // MOET de eerste regel blijven: mobiele browsers geven het geluid alleen
-    // vrij als dit synchroon binnen de tik gebeurt, dus vóór elke await.
-    spotifyPlayer.activateFromGesture();
-
+  /** Speelt af vanaf `startAt`; centrale afhandeling van de mislukte start */
+  const startSnippet = useCallback(async (startAt: number) => {
     if (!state.currentTrack?.spotifyUri) return;
-    if (isPlaying) { spotifyPlayer.pause(); setIsPlaying(false); return; }
-
-    // Elke keer opnieuw kiezen, zodat hetzelfde nummer niet steeds op dezelfde
-    // plek begint als iemand het fragment herhaalt
-    const startAt = pickStartMs(
-      state.currentTrack.durationMs,
-      settings.snippetSeconds,
-      settings.snippetStart
-    );
-
     setIsPlaying(true);
     setSecondsLeft(settings.snippetSeconds);
 
@@ -209,7 +213,40 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
       setIsPlaying(false);
       setSecondsLeft(settings.snippetSeconds);
     }
-  }, [state.currentTrack, isPlaying, settings]);
+  }, [state.currentTrack, settings.snippetSeconds]);
+
+  const handlePlay = useCallback(async () => {
+    // MOET de eerste regel blijven: mobiele browsers geven het geluid alleen
+    // vrij als dit synchroon binnen de tik gebeurt, dus vóór elke await.
+    spotifyPlayer.activateFromGesture();
+
+    if (!state.currentTrack?.spotifyUri) return;
+    if (isPlaying) { spotifyPlayer.pause(); setIsPlaying(false); return; }
+
+    // Eén keer kiezen en vasthouden: opnieuw afspelen herhaalt hetzelfde stuk.
+    // Een ander stuk horen gaat via de dobbelsteen-knop ernaast.
+    let startAt = chosenStartMs;
+    if (startAt === null) {
+      startAt = pickStartMs(
+        state.currentTrack.durationMs,
+        settings.snippetSeconds,
+        settings.snippetStart
+      );
+      setChosenStartMs(startAt);
+    }
+
+    await startSnippet(startAt);
+  }, [state.currentTrack, isPlaying, settings, chosenStartMs, startSnippet]);
+
+  /** Bewust een ander stuk van hetzelfde nummer — bv. als het fragment de outro raakte */
+  const handleNewSnippet = useCallback(async () => {
+    spotifyPlayer.activateFromGesture();
+    if (!state.currentTrack?.spotifyUri) return;
+
+    const startAt = pickStartMs(state.currentTrack.durationMs, settings.snippetSeconds, 'random');
+    setChosenStartMs(startAt);
+    await startSnippet(startAt);
+  }, [state.currentTrack, settings.snippetSeconds, startSnippet]);
 
   const handlePlace = (position: number) => {
     setState(prev => ({ ...prev, placedPosition: position, phase: 'placed' }));
@@ -248,14 +285,38 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
         <p className="font-bold mt-1">
           {winner.timeline.length} {isNl ? 'kaarten op de juiste plek' : 'cards placed correctly'}
         </p>
+
+        {canControlPlayback ? (
+          <button
+            onClick={() => setState(prev => playAgain(prev))}
+            className="mt-4 px-5 py-2.5 rounded-xl bg-slate-950 text-amber-300 font-black text-xs uppercase tracking-wider flex items-center gap-2 mx-auto shadow-lg"
+          >
+            <RotateCw className="w-4 h-4" />
+            {isNl ? 'Opnieuw spelen (zelfde spelers)' : 'Play again (same players)'}
+          </button>
+        ) : (
+          <p className="mt-3 text-xs font-bold opacity-80">
+            {isNl ? `${host?.name ?? 'De host'} kan een nieuw potje starten.` : `${host?.name ?? 'The host'} can start a new game.`}
+          </p>
+        )}
+        {canControlPlayback && (
+          <p className="mt-2 text-[11px] font-bold opacity-70">
+            {isNl
+              ? 'De gespeelde nummers doen niet meer mee — minder herhaling.'
+              : 'Played tracks stay excluded — fewer repeats.'}
+          </p>
+        )}
       </div>
     );
   }
 
   return (
     <div className="space-y-2">
-      {/* Instellingen: fragmentlengte en waar het fragment begint */}
+      {/* Instellingen: fragmentlengte en waar het fragment begint.
+          Alleen voor de host — die bedient de muziek, de rest hoeft er niet
+          per ongeluk aan te kunnen zitten. */}
       <div className="flex items-center justify-between gap-2">
+        {canControlPlayback && (
         <button
           onClick={() => setShowSettings(v => !v)}
           className={`shrink-0 px-2.5 py-1.5 rounded-xl border text-[11px] font-bold flex items-center gap-1.5 transition-colors ${
@@ -270,6 +331,7 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
             {settings.snippetStart === 'random' && (isNl ? ' · willekeurig' : ' · random')}
           </span>
         </button>
+        )}
 
         {/* Spelersstrip: munten en kaarten van iedereen, klikbaar om te bekijken */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 flex-1 min-w-0">
@@ -313,7 +375,7 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
         </div>
       </div>
 
-      {showSettings && (
+      {showSettings && canControlPlayback && (
         <div className="p-3 rounded-2xl bg-slate-900/90 border border-amber-500/30 space-y-3">
           <div>
             <div className="text-[10px] uppercase font-black tracking-wider text-slate-400 mb-1.5">
@@ -532,12 +594,25 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
               </div>
             )}
 
+            {/* Nieuw stuk van hetzelfde nummer — bv. als het fragment net de
+                outro raakte. Alleen zinvol in willekeurig-modus. */}
+            {canControlPlayback && settings.snippetStart === 'random' && state.currentTrack.spotifyUri && (
+              <button
+                onClick={handleNewSnippet}
+                title={isNl ? 'Speel een ander stuk van dit nummer' : 'Play a different part of this track'}
+                className="px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-600 hover:border-purple-400 text-slate-100 font-black text-xs uppercase flex items-center gap-1.5"
+              >
+                <Dices className="w-4 h-4 text-purple-300" />
+                {isNl ? 'Nieuw stuk' : 'New part'}
+              </button>
+            )}
+
             {state.phase !== 'revealed' && isMyTurn && (
               <label className="flex items-center gap-1.5 text-[11px] text-slate-300 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={state.claimedTitleArtist}
-                  onChange={e => setState(prev => ({ ...prev, claimedTitleArtist: e.target.checked }))}
+                  onChange={e => setState(prev => ({ ...prev, claimedTitleArtist: e.target.checked, titleArtistDoubt: false }))}
                   className="accent-amber-500"
                 />
                 <Coins className="w-3.5 h-3.5 text-amber-400" />
@@ -545,7 +620,23 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
               </label>
             )}
 
-            {state.phase === 'placed' && (
+            {/* De tafel twijfelt over het antwoord: markeer het, dan beslist de
+                host ná de onthulling — als iedereen de waarheid ziet */}
+            {state.phase !== 'revealed' && state.claimedTitleArtist && (
+              <label className="flex items-center gap-1.5 text-[11px] text-slate-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!!state.titleArtistDoubt}
+                  onChange={e => setState(prev => ({ ...prev, titleArtistDoubt: e.target.checked }))}
+                  className="accent-sky-500"
+                />
+                <HelpCircle className="w-3.5 h-3.5 text-sky-400" />
+                <span>{isNl ? 'Twijfel?' : 'Doubt?'}</span>
+              </label>
+            )}
+
+            {/* Omdraaien en doorgaan zijn van de host — die runt de tafel */}
+            {state.phase === 'placed' && canControlPlayback && (
               <button
                 onClick={handleReveal}
                 className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 font-black text-xs uppercase flex items-center gap-1.5"
@@ -555,7 +646,7 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
               </button>
             )}
 
-            {state.phase === 'revealed' && (
+            {state.phase === 'revealed' && canControlPlayback && (
               <button
                 onClick={handleNext}
                 className="px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-600 text-slate-100 font-black text-xs uppercase flex items-center gap-1.5"
@@ -609,12 +700,52 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
               {isNl ? 'Munt verdiend voor titel én artiest.' : 'Token earned for title and artist.'}
             </p>
           )}
-          {outcome.failedStealers.length > 0 && (
-            <p className="mt-1 text-slate-400">
-              {isNl ? 'Munt kwijt: ' : 'Lost a token: '}
-              {outcome.failedStealers.map(id => state.players.find(p => p.id === id)?.name).join(', ')}
-            </p>
+          {/* Betwiste claim: nu iedereen het antwoord ziet, hakt de host de knoop door */}
+          {outcome.claimInDoubt && (
+            <div className="mt-2 p-2 rounded-lg bg-sky-500/10 border border-sky-500/40">
+              <p className="text-sky-200 flex items-center gap-1 mb-1.5">
+                <HelpCircle className="w-3.5 h-3.5" />
+                {isNl
+                  ? `Twijfel over de titel/artiest-claim van ${active?.name}. Klopte het?`
+                  : `Doubt over ${active?.name}'s title/artist claim. Was it right?`}
+              </p>
+              {canControlPlayback ? (
+                <div className="flex gap-1.5">
+                  <button
+                    onClick={() => setState(prev => awardDoubtToken(prev))}
+                    className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 text-white text-[11px] font-black flex items-center gap-1"
+                  >
+                    <Coins className="w-3 h-3" />
+                    {isNl ? 'Ja — munt toekennen' : 'Yes — award token'}
+                  </button>
+                  <button
+                    onClick={() => setState(prev => dismissDoubtToken(prev))}
+                    className="px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-slate-200 text-[11px] font-black"
+                  >
+                    {isNl ? 'Nee — geen munt' : 'No — no token'}
+                  </button>
+                </div>
+              ) : (
+                <p className="text-[10px] text-sky-300/70">
+                  {isNl ? `${host?.name ?? 'De host'} beslist.` : `${host?.name ?? 'The host'} decides.`}
+                </p>
+              )}
+            </div>
           )}
+          {/* Alleen namen die we nog kennen — een vertrokken speler als lege
+              string tonen leverde "Munt kwijt: ," op */}
+          {(() => {
+            const failedNames = outcome.failedStealers
+              .map(id => state.players.find(p => p.id === id)?.name)
+              .filter(Boolean);
+            if (failedNames.length === 0) return null;
+            return (
+              <p className="mt-1 text-slate-400">
+                {isNl ? 'Munt kwijt: ' : 'Lost a token: '}
+                {failedNames.join(', ')}
+              </p>
+            );
+          })()}
         </div>
       )}
 
@@ -635,6 +766,15 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
             language={language}
             canPlace={isViewingActive && isMyTurn && state.phase === 'listening' && !!state.currentTrack}
             onPlace={handlePlace}
+            canSteal={
+              isViewingActive &&
+              state.phase === 'placed' &&
+              !isMyTurn &&
+              !!me &&
+              me.tokens >= 1 &&
+              !state.steals.some(s => s.playerId === localPlayerId)
+            }
+            onSteal={handleSteal}
             stealMarkers={isViewingActive ? state.steals.map(s => ({
               position: s.position,
               label: state.players.find(p => p.id === s.playerId)?.name.slice(0, 6) ?? '?',
@@ -656,34 +796,19 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
             <Hand className="w-4 h-4" />
             <span>{isNl ? 'HITSTER roepen?' : 'Call HITSTER?'}</span>
           </div>
-          <p className="text-[11px] text-red-200/80 mb-2">
+          <p className="text-[11px] text-red-200/80">
             {me.tokens < 1
               ? (isNl ? 'Je hebt geen munten om in te zetten.' : 'You have no tokens to spend.')
               : state.steals.some(s => s.playerId === localPlayerId)
-              ? (isNl ? 'Je hebt al een munt ingezet deze beurt.' : 'You already placed a token this turn.')
+              ? (isNl ? 'Je munt ligt op tafel. Nu maar hopen dat je gelijk hebt…' : 'Your token is down. Fingers crossed…')
+              : !isViewingActive
+              ? (isNl
+                  ? `Tik eerst op ${active?.name} in de spelersstrip om diens tijdlijn te zien.`
+                  : `Tap ${active?.name} in the player strip first to see their timeline.`)
               : (isNl
-                  ? `Denk je dat ${active?.name} fout plaatst? Kies hierboven in de tijdlijn de plek waar de kaart volgens jou hoort. Klopt het, dan steel je de kaart.`
-                  : `Think ${active?.name} is wrong? Pick the correct spot in the timeline above to steal the card.`)}
+                  ? `Denk je dat ${active?.name} fout zit? Tik hierboven in de tijdlijn op de rode plek waar de kaart volgens jou hoort — dat kost een munt.`
+                  : `Think ${active?.name} is wrong? Tap the red spot in the timeline above where you think the card belongs — costs one token.`)}
           </p>
-          {me.tokens >= 1 && !state.steals.some(s => s.playerId === localPlayerId) && viewed && isViewingActive && (
-            <div className="flex flex-wrap gap-1.5">
-              {Array.from({ length: (active?.timeline.length ?? 0) + 1 }, (_, i) => i)
-                .filter(pos => !state.steals.some(s => s.position === pos))
-                // De plek waar de kaart al ligt kun je niet "stelen" — dat is
-                // gewoon het antwoord van de actieve speler nadoen
-                .filter(pos => pos !== state.placedPosition)
-                .map(pos => (
-                  <button
-                    key={pos}
-                    onClick={() => handleSteal(pos)}
-                    className="px-2.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-[11px] font-bold flex items-center gap-1"
-                  >
-                    <Coins className="w-3 h-3" />
-                    {isNl ? `Plek ${pos + 1}` : `Slot ${pos + 1}`}
-                  </button>
-                ))}
-            </div>
-          )}
         </div>
       )}
     </div>

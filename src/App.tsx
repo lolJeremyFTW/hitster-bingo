@@ -354,16 +354,6 @@ export function App() {
           />
         </div>
 
-        {/* Hint die alleen staand verschijnt: het spel wil de breedte */}
-        <div className="portrait:flex hidden items-center justify-center gap-1.5 px-3 py-1.5 bg-amber-500/15 border-t border-amber-500/30 text-[11px] text-amber-200 shrink-0">
-          <RefreshCw className="w-3.5 h-3.5" />
-          <span>
-            {language === 'nl'
-              ? 'Draai je telefoon horizontaal voor de volledige tijdlijn'
-              : 'Turn your phone sideways for the full timeline'}
-          </span>
-        </div>
-
         {showScoreboard && (
           <Scoreboard
             language={language}

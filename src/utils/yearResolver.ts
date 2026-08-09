@@ -32,6 +32,45 @@ export interface YearResolveResult {
   checkedCount: number;
 }
 
+/**
+ * Cache van geverifieerde jaartallen, gedeeld over alle afspeellijsten.
+ *
+ * "Bohemian Rhapsody" hoeft maar één keer opgezocht te worden — daarna is de
+ * correctie gratis en direct, ook in elke andere editie waar hij in staat.
+ * Handmatige correcties van de host tellen als de sterkste bron en gaan er
+ * ook in.
+ */
+const YEAR_CACHE_KEY = 'hitster_year_cache';
+
+function yearCacheKey(title: string, artist: string): string {
+  return `${cleanTitle(title).toLowerCase()}|${primaryArtist(artist).toLowerCase()}`;
+}
+
+function loadYearCache(): Record<string, number> {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(YEAR_CACHE_KEY) || '{}');
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveYearCache(cache: Record<string, number>): void {
+  try {
+    localStorage.setItem(YEAR_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // Opslag vol — cache is een optimalisatie, geen vereiste
+  }
+}
+
+/** Legt een bevestigd jaartal vast voor hergebruik in alle lijsten. */
+export function rememberYear(title: string, artist: string, year: number): void {
+  if (year < 1900 || year > new Date().getFullYear()) return;
+  const cache = loadYearCache();
+  cache[yearCacheKey(title, artist)] = year;
+  saveYearCache(cache);
+}
+
 function cleanTitle(title: string): string {
   return title.replace(TITLE_NOISE, '').replace(/\s+/g, ' ').trim();
 }
@@ -129,40 +168,60 @@ export async function resolveOriginalYears(
     return { tracks, correctedCount: 0, checkedCount: 0 };
   }
 
-  onProgress?.(
-    `🔍 ${suspects.length} van ${tracks.length} nummers hebben een verdacht jaartal — controleren bij MusicBrainz (~${Math.ceil(suspects.length * 1.1)}s)...`,
-    0,
-    suspects.length
-  );
-
+  // Eerst de cache: alles wat al eens geverifieerd is, is gratis en direct
+  const cache = loadYearCache();
   const corrections = new Map<string, number>();
-  let done = 0;
+  const toFetch: CustomTrack[] = [];
 
   for (const track of suspects) {
+    const cached = cache[yearCacheKey(track.title, track.artist)];
+    if (cached) {
+      if (cached !== track.year) corrections.set(track.id, cached);
+    } else {
+      toFetch.push(track);
+    }
+  }
+
+  const cacheHits = suspects.length - toFetch.length;
+  onProgress?.(
+    `🔍 ${suspects.length} verdachte jaartallen` +
+    (cacheHits > 0 ? `, ${cacheHits} direct uit eerdere controles` : '') +
+    (toFetch.length > 0 ? ` — ${toFetch.length} opzoeken bij MusicBrainz (~${Math.ceil(toFetch.length * 1.1)}s)...` : '.'),
+    0,
+    toFetch.length
+  );
+
+  let done = 0;
+
+  for (const track of toFetch) {
     if (shouldCancel?.()) {
-      onProgress?.(`⏹️ Gestopt na ${done} nummers.`, done, suspects.length);
+      onProgress?.(`⏹️ Gestopt na ${done} nummers.`, done, toFetch.length);
       break;
     }
 
     const year = await lookupFirstReleaseYear(track.title, track.artist);
-    if (year && year !== track.year) {
-      corrections.set(track.id, year);
+    if (year) {
+      // Onthouden voor alle volgende lijsten en runs
+      cache[yearCacheKey(track.title, track.artist)] = year;
+      if (year !== track.year) corrections.set(track.id, year);
     }
 
     done++;
-    if (done % 5 === 0 || done === suspects.length) {
+    if (done % 5 === 0 || done === toFetch.length) {
       onProgress?.(
-        `🔍 ${done}/${suspects.length} gecontroleerd, ${corrections.size} jaartallen gecorrigeerd...`,
+        `🔍 ${done}/${toFetch.length} gecontroleerd, ${corrections.size} jaartallen gecorrigeerd...`,
         done,
-        suspects.length
+        toFetch.length
       );
     }
 
     // Rate limit respecteren; anders blokkeert MusicBrainz het IP
-    if (done < suspects.length) {
+    if (done < toFetch.length) {
       await new Promise(r => setTimeout(r, MB_RATE_LIMIT_MS));
     }
   }
+
+  saveYearCache(cache);
 
   const updated = tracks.map(t => {
     const corrected = corrections.get(t.id);
@@ -178,5 +237,5 @@ export async function resolveOriginalYears(
     suspects.length
   );
 
-  return { tracks: updated, correctedCount: corrections.size, checkedCount: done };
+  return { tracks: updated, correctedCount: corrections.size, checkedCount: cacheHits + done };
 }
