@@ -262,11 +262,14 @@ export const ClassicGame: React.FC<ClassicGameProps> = ({
   const handleReveal = () => {
     spotifyPlayer.pause();
     setIsPlaying(false);
-    // De uitslag reist mee in result.state.lastOutcome, zodat álle toestellen
-    // hem zien — niet alleen degene die op de knop drukte
-    const result = resolveTurn(state);
-    setState(() => result.state);
-    if (result.summary.placementCorrect) soundEffects.playBingoVictory();
+    // Afrekenen op de állerlaatste staat, niet op wat er bij de render stond:
+    // een steal die binnenkomt terwijl de host op omdraaien drukt — precies het
+    // moment waarop mensen HITSTER roepen — zou anders stilletjes verdwijnen.
+    // De uitslag reist mee in state.lastOutcome, zodat álle toestellen hem zien.
+    setState(prev => resolveTurn(prev).state);
+    // Voor het geluidje is de render-staat goed genoeg: of de plaatsing klopt
+    // hangt niet af van laat binnengekomen steals
+    if (resolveTurn(state).summary.placementCorrect) soundEffects.playBingoVictory();
   };
 
   const handleNext = () => {
